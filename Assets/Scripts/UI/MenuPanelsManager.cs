@@ -1,12 +1,8 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-using Photon.Pun;
-using Photon.Realtime;
 using TMPro;
+using UnityEngine;
 
-public class MenuPanelsManager : MonoBehaviourPunCallbacks
+public class MenuPanelsManager : MonoBehaviour
 {
     public GameObject failedPanel;
     public TMP_InputField failedInputField;
@@ -47,6 +43,16 @@ public class MenuPanelsManager : MonoBehaviourPunCallbacks
         rightPanelObjects[1] = quickGamePanel;
         rightPanelObjects[2] = roomsPanel;
         rightPanelObjects[3] = insideRoomPanel;
+    }
+
+    private void OnEnable()
+    {
+        CODNetworkManager.ClientError += ShowConnectionError;
+    }
+
+    private void OnDisable()
+    {
+        CODNetworkManager.ClientError -= ShowConnectionError;
     }
 
     public static void SetActiveForSingleObject(GameObject panel, bool active)
@@ -99,14 +105,9 @@ public class MenuPanelsManager : MonoBehaviourPunCallbacks
             else pan.SetActive(false);
         }
     }
-    public override void OnJoinRoomFailed(short returnCode, string message)
-    {
-        Debug.Log("sa");
-        failedPanel.SetActive(true);
-        failedInputField.text += Environment.NewLine + message;
-    }
 
-    public override void OnJoinRandomFailed(short returnCode, string message)
+    /// <summary>Shown when connecting/joining fails (transport error).</summary>
+    public void ShowConnectionError(string message)
     {
         failedPanel.SetActive(true);
         failedInputField.text += Environment.NewLine + message;

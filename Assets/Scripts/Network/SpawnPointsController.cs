@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class SpawnPointsController : MonoBehaviour
@@ -7,17 +5,28 @@ public class SpawnPointsController : MonoBehaviour
     public static SpawnPointsController instance;
 
     public Transform[] spawnPoints;
-    // Start is called before the first frame update
-    void Start()
-    {
-        if (instance != null) Destroy(instance);
 
+    void Awake()
+    {
         instance = this;
+    }
+
+    void OnDestroy()
+    {
+        if (instance == this) instance = null;
     }
 
     public Vector3 GetRandomSpawnPoints()
     {
-        int pointId = Random.Range(0, spawnPoints.Length - 1);
-        return spawnPoints[pointId].position;
-    } 
+        Transform point = GetRandomSpawnPointTransform();
+        return point != null ? point.position : Vector3.zero;
+    }
+
+    public Transform GetRandomSpawnPointTransform()
+    {
+        if (spawnPoints == null || spawnPoints.Length == 0) return null;
+
+        int pointId = Random.Range(0, spawnPoints.Length);
+        return spawnPoints[pointId];
+    }
 }

@@ -1,11 +1,10 @@
-using System.Collections;
-using System.Collections.Generic;
+using Mirror;
 using UnityEngine;
-using Photon.Pun;
 
 public class BulletNetwork : BulletBehaviour
 {
-    private PhotonView photonView;
+    private NetworkIdentity shooterIdentity;
+    private NetCMDs shooterCmds;
     private string weaponName;
     private float PlayerDamage;
     public float lifeTime;
@@ -28,7 +27,8 @@ public class BulletNetwork : BulletBehaviour
     {
         var weap = bulletCreator.GetComponent<Weapon>();
 
-        photonView = bulletCreator.root.GetComponent<PhotonView>();
+        shooterIdentity = bulletCreator.root.GetComponent<NetworkIdentity>();
+        shooterCmds = bulletCreator.root.GetComponent<NetCMDs>();
         PlayerDamage = weap.playerDamage;
         force = weap.bulletForce;
         startSpeed = weap.bulletStartSpeed;
@@ -58,13 +58,20 @@ public class BulletNetwork : BulletBehaviour
                 Destroy(blood, 3);
             }
 
-            if (photonView.IsMine)
+            // only the shooting client reports the hit; damage is applied by the server
+            if (shooterIdentity != null && shooterIdentity.isOwned && shooterCmds != null)
             {
-
-                // add force for rigid body hit
                 if (hit.collider.CompareTag("HitBox") && hit.transform.root.CompareTag("Player"))
                 {
-                    hit.transform.root.GetComponent<PhotonView>().RPC("DamageRPC", RpcTarget.All, PlayerDamage *= hit.collider.name == "Head" ? 3 : 1, photonView.ViewID, hit.collider.name == "Head", weaponName);
+                    var victimIdentity = hit.transform.root.GetComponent<NetworkIdentity>();
+
+                    if (victimIdentity != null)
+                    {
+                        bool hitOnTheHead = hit.collider.name == "Head";
+                        float damage = PlayerDamage * (hitOnTheHead ? 3f : 1f);
+
+                        shooterCmds.CmdDealDamage(victimIdentity, damage, hitOnTheHead, weaponName);
+                    }
                 }
             }
 

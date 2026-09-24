@@ -1,6 +1,6 @@
-using Photon.Pun;
+using UnityEngine;
 
-public class MenuSelectRoom : MonoBehaviourPunCallbacks
+public class MenuSelectRoom : MonoBehaviour
 {
     public void OnCreateRoomClick()
     {
@@ -9,19 +9,11 @@ public class MenuSelectRoom : MonoBehaviourPunCallbacks
 
     public void OnQuickGameClick()
     {
-        if (!PhotonNetwork.InLobby)
-        {
-            PhotonNetwork.JoinLobby();
-        }
         MenuPanelsManager.SetActiveInRightPanel(MenuPanelsManager.instance.quickGamePanel);
     }
 
     public void OnRoomsClick()
     {
-        if (!PhotonNetwork.InLobby)
-        {
-            PhotonNetwork.JoinLobby();
-        }
         MenuPanelsManager.SetActiveInRightPanel(MenuPanelsManager.instance.roomsPanel);
     }
 }

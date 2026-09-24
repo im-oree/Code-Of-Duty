@@ -51,15 +51,6 @@ public class BulletOffline : BulletBehaviour
                 Destroy(blood, 3);
             }
 
-            /* if (spawnerPV.IsMine)
-            {
-                // add force for rigid body hit
-                if (hit.collider.CompareTag("HitBox") && hit.transform.root.CompareTag("Player"))
-                {
-                    hit.transform.root.GetComponent<PhotonView>().RPC("DamageRPC", RpcTarget.All,  PlayerDamage *= hit.collider.name == "Head"? 3 : 1, spawnerPV.ViewID, hit.collider.name == "Head", weaponName);
-                }
-            } */
-
             if (hit.rigidbody)
                 hit.rigidbody.AddForceAtPosition(force * transform.forward, hit.point);
 

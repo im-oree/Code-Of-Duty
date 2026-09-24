@@ -1,21 +1,16 @@
-using System.Collections;
-using System.Collections.Generic;
-using Photon.Pun;
-using Photon.Realtime;
+using Mirror;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class MenuCreateRoom : MonoBehaviourPunCallbacks
+public class MenuCreateRoom : MonoBehaviour
 {
     [SerializeField] private TMP_InputField roomNameInputField;
     [SerializeField] private TMP_InputField maxPlayersInputField;
     [SerializeField] private Toggle showInRoomListToggle;
 
-    public override void OnEnable()
+    public void OnEnable()
     {
-        base.OnEnable();
-
         if (string.IsNullOrEmpty(roomNameInputField.text))
         {
             roomNameInputField.text = "Room" + ((int)Random.Range(1, 999)).ToString();
@@ -25,7 +20,6 @@ public class MenuCreateRoom : MonoBehaviourPunCallbacks
         {
             maxPlayersInputField.text = 4.ToString();
         }
-        
     }
 
     public void OnCreateRoomClick()
@@ -35,15 +29,20 @@ public class MenuCreateRoom : MonoBehaviourPunCallbacks
         {
             return;
         }
-        RoomOptions roomOptions = new RoomOptions();
-        roomOptions.MaxPlayers = (byte)int.Parse(maxPlayersInputField.text);
-        roomOptions.IsVisible = showInRoomListToggle.isOn;
-        roomOptions.IsOpen = true;
-        PhotonNetwork.CreateRoom(roomName, roomOptions, null);
-    }
-    public override void OnCreatedRoom()
-    {
-        Debug.Log("Room create " + PhotonNetwork.CurrentRoom.Name + " visible: " + PhotonNetwork.CurrentRoom.IsVisible);
+
+        if (NetworkServer.active || NetworkClient.active) return;
+
+        if (!int.TryParse(maxPlayersInputField.text, out int maxPlayers) || maxPlayers < 1)
+        {
+            maxPlayers = 4;
+        }
+
+        bool visibleOnLan = showInRoomListToggle == null || showInRoomListToggle.isOn;
+
+        CODNetworkManager manager = CODNetworkManager.EnsureExists();
+        manager.HostLanGame(roomName, maxPlayers, visibleOnLan);
+
+        Debug.Log("Room created: " + roomName + " (max " + maxPlayers + " players, visible: " + visibleOnLan + ")");
+        // panel switch happens when our lobby player spawns (MenuInsideRoom)
     }
 }
-
