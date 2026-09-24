@@ -28,8 +28,9 @@ public class MenuStage : MonoBehaviour
         BuildSmoke();
         BuildDust();
 
-        // the star of the show
-        operatorDisplay = OperatorDisplay.Create(transform, new Vector3(0.55f, 0f, 0f), Quaternion.Euler(0f, 162f, 0f));
+        // the star of the show — yaw ~-18 so he faces the camera (camera looks
+        // down -Z; the player model's forward is +Z at identity)
+        operatorDisplay = OperatorDisplay.Create(transform, new Vector3(0.55f, 0f, 0f), Quaternion.Euler(0f, -18f, 0f));
     }
 
     void SetupCamera()
@@ -37,8 +38,9 @@ public class MenuStage : MonoBehaviour
         cam = Camera.main;
         if (cam == null) return;
 
-        cam.transform.SetPositionAndRotation(new Vector3(-0.35f, 1.35f, 3.1f), Quaternion.Euler(4.5f, 178f, 0f));
-        cam.fieldOfView = 42f;
+        // close-up COD-style framing: roughly knees-up on the operator
+        cam.transform.SetPositionAndRotation(new Vector3(-0.25f, 1.22f, 2.45f), Quaternion.Euler(2.5f, 178f, 0f));
+        cam.fieldOfView = 40f;
         cam.clearFlags = CameraClearFlags.SolidColor;
         cam.backgroundColor = new Color(0.02f, 0.025f, 0.03f, 1f);
 
