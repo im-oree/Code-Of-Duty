@@ -1,36 +1,71 @@
-using Photon.Pun;
-using Photon.Realtime;
+using Mirror;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
-public class MenuQuickGame : MonoBehaviourPunCallbacks
+/// <summary>
+/// Quick game: connect to a direct address (IP/hostname), or auto-join
+/// the first LAN server found by discovery.
+/// </summary>
+public class MenuQuickGame : MonoBehaviour
 {
+    [Tooltip("Direct connect field: server IP or hostname")]
     [SerializeField] private TMP_InputField roomNameInputField;
+
+    private CODNetworkDiscovery discovery;
+    private bool searching;
 
     public void OnConnectClick()
     {
         if (string.IsNullOrEmpty(roomNameInputField.text)) return;
 
-        if (PhotonNetwork.InLobby)
-        {
-            PhotonNetwork.LeaveLobby();
-            PhotonNetwork.JoinRoom(roomNameInputField.text);
-        }
+        CODNetworkManager manager = CODNetworkManager.EnsureExists();
+        manager.JoinGame(roomNameInputField.text.Trim());
     }
 
     public void OnConnectToRandomClick()
     {
-        if (PhotonNetwork.InLobby)
+        CODNetworkManager manager = CODNetworkManager.EnsureExists();
+        discovery = manager != null ? manager.discovery : null;
+
+        if (discovery == null || searching) return;
+        if (NetworkServer.active || NetworkClient.active) return;
+
+        searching = true;
+        discovery.OnServerFound.AddListener(OnServerDiscovered);
+        discovery.StartDiscovery();
+    }
+
+    void OnServerDiscovered(CODServerResponse info)
+    {
+        if (!searching) return;
+
+        StopSearch();
+        CODNetworkManager.Instance.JoinGame(info.uri);
+    }
+
+    void StopSearch()
+    {
+        searching = false;
+        if (discovery != null)
         {
-            PhotonNetwork.LeaveLobby();
-            PhotonNetwork.JoinRandomRoom();
+            discovery.OnServerFound.RemoveListener(OnServerDiscovered);
         }
     }
-    
+
+    void OnDisable()
+    {
+        StopSearch();
+    }
+
     public void OnCloseButtonClick()
     {
-        if (PhotonNetwork.InLobby) PhotonNetwork.LeaveLobby();
+        StopSearch();
+
+        if (discovery != null && !NetworkServer.active && !NetworkClient.active)
+        {
+            discovery.StopDiscovery();
+        }
+
         MenuPanelsManager.instance.CloseRightPanel();
     }
 }

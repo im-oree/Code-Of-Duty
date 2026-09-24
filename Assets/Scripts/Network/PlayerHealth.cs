@@ -1,7 +1,5 @@
-using System.Collections;
-using System.Collections.Generic;
+using Mirror;
 using UnityEngine;
-using Photon.Pun;
 
 public class PlayerHealth : MonoBehaviour
 {
@@ -9,7 +7,17 @@ public class PlayerHealth : MonoBehaviour
     [SerializeField] private PlayerLifeController playerLifeController;
     [SerializeField] private HitBoxColidersList hitBoxColidersList;
 
-    private void Start()
+    NetworkIdentity rootIdentity;
+
+    // no identity (offline test scenes) counts as the local player
+    bool IsLocalPlayer => rootIdentity == null || rootIdentity.isOwned;
+
+    void Awake()
+    {
+        rootIdentity = transform.root.GetComponent<NetworkIdentity>();
+    }
+
+    void Start()
     {
         hitBoxColidersList.Init();
     }
@@ -20,7 +28,7 @@ public class PlayerHealth : MonoBehaviour
 
         float retValue = health;
 
-        if (transform.root.GetComponent<PhotonView>().IsMine)
+        if (IsLocalPlayer && UIManger.instance != null)
         {
             UIManger.instance.healthPanel.SetHealthValue(health);
         }

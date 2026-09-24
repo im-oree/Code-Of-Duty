@@ -1,31 +1,32 @@
-using System.Collections;
 using System.Collections.Generic;
-using Photon.Pun;
+using Mirror;
 using UnityEngine;
 
-public class NetComponentEnabler : MonoBehaviour
+/// <summary>
+/// Disables local-only components (camera, input, movement, etc.)
+/// on player objects that don't belong to this client.
+/// </summary>
+public class NetComponentEnabler : NetworkBehaviour
 {
-    [SerializeField] private PhotonView photonView;
     [SerializeField] private List<MonoBehaviour> disableComponents;
     [SerializeField] private List<GameObject> inactiveGameObjects;
     [SerializeField] private Camera playerCamera;
 
-    private void Awake()
+    public override void OnStartClient()
     {
-    }
-    // Start is called before the first frame update
-    void Start()
-    {
-        if (!photonView.IsMine)
+        if (!isOwned)
         {
             ComponentsDisaber();
         }
     }
 
-    // Update is called once per frame
-    void Update()
+    public override void OnStartServer()
     {
-
+        // dedicated server: nothing is local, disable everything local-only
+        if (!NetworkClient.active)
+        {
+            ComponentsDisaber();
+        }
     }
 
     void ComponentsDisaber()

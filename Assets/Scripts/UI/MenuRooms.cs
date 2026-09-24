@@ -1,85 +1,83 @@
-using System.Collections;
 using System.Collections.Generic;
+using Mirror;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using Photon.Pun;
-using Photon.Realtime;
-using TMPro;
 
-public class MenuRooms : MonoBehaviourPunCallbacks
+/// <summary>LAN server browser: lists rooms discovered via CODNetworkDiscovery.</summary>
+public class MenuRooms : MonoBehaviour
 {
     [SerializeField] private GameObject roomUIItemPrefab;
     [SerializeField] private GameObject roomsContent;
-    private Dictionary<string, RoomInfo> roomListData;
-    private Dictionary<string, GameObject> roomListGameobject;
+    private readonly Dictionary<long, CODServerResponse> discoveredServers = new Dictionary<long, CODServerResponse>();
+    private readonly List<GameObject> roomListGameobject = new List<GameObject>();
+    private CODNetworkDiscovery discovery;
 
-
-    void Start()
+    void OnEnable()
     {
-        roomListData = new Dictionary<string, RoomInfo>();
-        roomListGameobject = new Dictionary<string, GameObject>();
-    }
+        CODNetworkManager manager = CODNetworkManager.EnsureExists();
+        discovery = manager != null ? manager.discovery : null;
 
-    public override void OnLeftLobby()
-    {
-        ClearRoomList();
-        roomListData.Clear();
-    }
-
-    public override void OnRoomListUpdate(List<RoomInfo> roomList)
-    {
+        discoveredServers.Clear();
         ClearRoomList();
 
-        foreach (RoomInfo roomInfo in roomList)
+        if (discovery != null && !NetworkServer.active && !NetworkClient.active)
         {
-            if (!roomInfo.IsOpen || !roomInfo.IsVisible || roomInfo.RemovedFromList)
+            discovery.OnServerFound.AddListener(OnServerDiscovered);
+            discovery.StartDiscovery();
+        }
+    }
+
+    void OnDisable()
+    {
+        if (discovery != null)
+        {
+            discovery.OnServerFound.RemoveListener(OnServerDiscovered);
+
+            // don't kill the broadcast when we're hosting/connected
+            if (!NetworkServer.active && !NetworkClient.active)
             {
-                if (roomListData.ContainsKey(roomInfo.Name))
-                {
-                    roomListData.Remove(roomInfo.Name);
-                }
-            }
-            else
-            {
-                if (roomListData.ContainsKey(roomInfo.Name))
-                {
-                    roomListData[roomInfo.Name] = roomInfo;
-                }
-                else
-                {
-                    roomListData.Add(roomInfo.Name, roomInfo);
-                }
+                discovery.StopDiscovery();
             }
         }
+    }
 
-        foreach (RoomInfo roomInfo in roomListData.Values)
+    void OnServerDiscovered(CODServerResponse info)
+    {
+        discoveredServers[info.serverId] = info;
+        RebuildRoomList();
+    }
+
+    void RebuildRoomList()
+    {
+        ClearRoomList();
+
+        foreach (var info in discoveredServers.Values)
         {
             GameObject roomItemObject = Instantiate(roomUIItemPrefab);
             roomItemObject.transform.SetParent(roomsContent.transform);
             roomItemObject.transform.localScale = Vector3.one;
 
-            roomItemObject.transform.GetChild(0).GetComponent<TMP_Text>().text = roomInfo.Name;
-            roomItemObject.transform.GetChild(1).GetComponent<TMP_Text>().text = roomInfo.PlayerCount.ToString() + "/" + roomInfo.MaxPlayers.ToString();
-            roomItemObject.transform.GetChild(2).GetComponent<Button>().onClick.AddListener(() => JoinRoomFromlist(roomInfo.Name));
+            roomItemObject.transform.GetChild(0).GetComponent<TMP_Text>().text = info.serverName;
+            roomItemObject.transform.GetChild(1).GetComponent<TMP_Text>().text = info.players.ToString() + "/" + info.maxPlayers.ToString();
 
-            roomListGameobject.Add(roomInfo.Name, roomItemObject);
+            System.Uri joinUri = info.uri;
+            roomItemObject.transform.GetChild(2).GetComponent<Button>().onClick.AddListener(() => JoinRoomFromlist(joinUri));
+
+            roomListGameobject.Add(roomItemObject);
         }
     }
 
-    private void JoinRoomFromlist(string roomName)
+    private void JoinRoomFromlist(System.Uri uri)
     {
-        if (PhotonNetwork.InLobby)
-        {
-            PhotonNetwork.LeaveLobby();
-            PhotonNetwork.JoinRoom(roomName);
-        }
+        CODNetworkManager.Instance.JoinGame(uri);
     }
 
     public void ClearRoomList()
     {
         if (roomListGameobject.Count == 0) return;
 
-        foreach (var item in roomListGameobject.Values)
+        foreach (var item in roomListGameobject)
         {
             Destroy(item);
         }
@@ -88,7 +86,6 @@ public class MenuRooms : MonoBehaviourPunCallbacks
 
     public void OnCloseButtonClick()
     {
-        if (PhotonNetwork.InLobby) PhotonNetwork.LeaveLobby();
         MenuPanelsManager.instance.CloseRightPanel();
     }
 }

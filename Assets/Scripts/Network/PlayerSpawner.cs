@@ -1,22 +1,26 @@
-using System.Collections;
-using System.Collections.Generic;
-using Photon.Pun;
+using Mirror;
 using UnityEngine;
 
+/// <summary>
+/// Gameplay scene bootstrapper. Player spawning itself is handled by CODNetworkManager;
+/// this makes sure the network is running when the arena scene is opened directly
+/// (offline play / pressing Play on the scene in the editor) by booting the internal server.
+/// </summary>
 public class PlayerSpawner : MonoBehaviour
 {
-    [SerializeField] private GameObject playerPrefab;
+    [SerializeField] private GameObject playerPrefab; // legacy field, spawning lives in CODNetworkManager
 
     public Transform[] spawnPoints;
-    // Start is called before the first frame update
+
     void Start()
     {
-        if (PhotonNetwork.IsConnectedAndReady)
-        {
-            Transform sPoint = GetRandomSpawnPoint();
-            PhotonNetwork.Instantiate(playerPrefab.name, sPoint.position, Quaternion.identity);
-        }
+        CODNetworkManager manager = CODNetworkManager.EnsureExists();
 
+        // opened directly without a session: start the internal server, like a real game
+        if (manager != null && !NetworkClient.active && !NetworkServer.active)
+        {
+            manager.StartInternalHost();
+        }
     }
 
     public Transform GetRandomSpawnPoint()

@@ -1,111 +1,87 @@
-using UnityEngine;
-using TMPro;
-using Photon.Realtime;
-using UnityEngine.UI;
-using Photon.Pun;
 using System.Collections.Generic;
+using Mirror;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
 
-public class MenuInsideRoom : MonoBehaviourPunCallbacks
+public class MenuInsideRoom : MonoBehaviour
 {
     public Color myItemColor;
     private Color defaultColor;
     [SerializeField] private GameObject PlayerUIItemPrefab;
     [SerializeField] private GameObject PlayerListContent;
     [SerializeField] private GameObject StartGameButton;
-    private Dictionary<int, GameObject> playerListGameobjects;
+    private readonly List<GameObject> playerListGameobjects = new List<GameObject>();
 
-    // Start is called before the first frame update
-    void Start()
+    void Awake()
     {
-        PhotonNetwork.AutomaticallySyncScene = true;
         defaultColor = PlayerUIItemPrefab.GetComponent<Image>().color;
     }
 
-    // Update is called once per frame
-    void Update()
+    void OnEnable()
     {
-
+        CODLobbyPlayer.LobbyChanged += RebuildPlayerList;
+        CODLobbyPlayer.LocalPlayerJoined += OnLocalPlayerJoined;
     }
 
-    public override void OnJoinedRoom()
+    void OnDisable()
     {
-        Debug.Log(PhotonNetwork.LocalPlayer.NickName + " room joined");
+        CODLobbyPlayer.LobbyChanged -= RebuildPlayerList;
+        CODLobbyPlayer.LocalPlayerJoined -= OnLocalPlayerJoined;
+    }
+
+    /// <summary>Our own lobby player spawned: we're inside the room.</summary>
+    void OnLocalPlayerJoined()
+    {
+        Debug.Log(CODNetworkManager.PlayerName + " room joined");
 
         MenuPanelsManager.instance.CloseLeftPanel();
         MenuPanelsManager.SetActiveInRightPanel(MenuPanelsManager.instance.insideRoomPanel);
 
-        StartGameButton.SetActive(PhotonNetwork.IsMasterClient);
-
-
-        if (playerListGameobjects == null)
-        {
-            playerListGameobjects = new Dictionary<int, GameObject>();
-        }
-
-        foreach (var p in PhotonNetwork.PlayerList)
-        {
-            CreatePlayerItemObject(p);
-        }
-
+        RebuildPlayerList();
     }
 
-    public override void OnPlayerEnteredRoom(Player newPlayer)
+    void RebuildPlayerList()
     {
-        CreatePlayerItemObject(newPlayer);
-    }
-
-    public override void OnPlayerLeftRoom(Player otherPlayer)
-    {
-        Destroy(playerListGameobjects[otherPlayer.ActorNumber]);
-        playerListGameobjects.Remove(otherPlayer.ActorNumber);
-
-        StartGameButton.SetActive(PhotonNetwork.IsMasterClient);
-    }
-    private void CreatePlayerItemObject(Player player)
-    {
-        GameObject playerItemObject = Instantiate(PlayerUIItemPrefab);
-        playerItemObject.transform.SetParent(PlayerListContent.transform);
-        playerItemObject.transform.localScale = Vector3.one;
-        playerItemObject.transform.GetChild(0).GetComponent<TMP_Text>().text = player.NickName;
-
-        if (player.ActorNumber == PhotonNetwork.LocalPlayer.ActorNumber)
+        foreach (var go in playerListGameobjects)
         {
-            playerItemObject.GetComponent<Image>().color = myItemColor;
-        }
-        else
-        {
-            playerItemObject.GetComponent<Image>().color = defaultColor;
-        }
-
-        playerListGameobjects.Add(player.ActorNumber, playerItemObject);
-    }
-
-    public override void OnLeftRoom()
-    {
-        MenuPanelsManager.SetActiveInLeftPanel(MenuPanelsManager.instance.selectRoomPanel);
-
-        foreach (GameObject obj in playerListGameobjects.Values)
-        {
-            Destroy(obj);
+            Destroy(go);
         }
         playerListGameobjects.Clear();
+
+        foreach (var lobbyPlayer in CODLobbyPlayer.All)
+        {
+            if (lobbyPlayer == null) continue;
+
+            GameObject playerItemObject = Instantiate(PlayerUIItemPrefab);
+            playerItemObject.transform.SetParent(PlayerListContent.transform);
+            playerItemObject.transform.localScale = Vector3.one;
+            playerItemObject.transform.GetChild(0).GetComponent<TMP_Text>().text = lobbyPlayer.playerName;
+            playerItemObject.GetComponent<Image>().color = lobbyPlayer.isLocalPlayer ? myItemColor : defaultColor;
+
+            playerListGameobjects.Add(playerItemObject);
+        }
+
+        // only the host can start the match
+        StartGameButton.SetActive(NetworkServer.active);
     }
 
     public void OnDisconnectClicked()
     {
-        if (PhotonNetwork.InRoom)
+        if (CODNetworkManager.Instance != null)
         {
-            PhotonNetwork.LeaveRoom();
+            CODNetworkManager.Instance.Leave();
         }
+
         MenuPanelsManager.SetActiveInLeftPanel(MenuPanelsManager.instance.selectRoomPanel);
         MenuPanelsManager.instance.CloseRightPanel();
     }
 
     public void OnStartGameClicked()
     {
-        if (PhotonNetwork.IsMasterClient)
+        if (NetworkServer.active)
         {
-           PhotonNetwork.LoadLevel("DMArena1");
+            CODNetworkManager.Instance.BeginGame();
         }
     }
 }

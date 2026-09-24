@@ -1,21 +1,12 @@
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
 using TMPro;
-using Photon.Pun;
-using Photon.Realtime;
+using UnityEngine;
 
-public class MenuLogin : MonoBehaviourPunCallbacks
+public class MenuLogin : MonoBehaviour
 {
     [SerializeField] private TMP_InputField playerNameField;
     const string playerNamePrefKey = "PlayerName";
 
     #region Unity methods
-
-    private void Awake()
-    {
-        PhotonNetwork.AutomaticallySyncScene = true;
-    }
 
     void Start()
     {
@@ -28,14 +19,9 @@ public class MenuLogin : MonoBehaviourPunCallbacks
 
     private void GetSavedPlayerName()
     {
-        string defaultName = string.Empty;
-        if (playerNameField != null)
+        if (playerNameField != null && PlayerPrefs.HasKey(playerNamePrefKey))
         {
-            if (PlayerPrefs.HasKey(playerNamePrefKey))
-            {
-                defaultName = PlayerPrefs.GetString(playerNamePrefKey);
-                playerNameField.text = defaultName;
-            }
+            playerNameField.text = PlayerPrefs.GetString(playerNamePrefKey);
         }
     }
 
@@ -47,34 +33,13 @@ public class MenuLogin : MonoBehaviourPunCallbacks
             return;
         }
 
-        PlayerPrefs.SetString(playerNamePrefKey, playerNameField.text);
+        CODNetworkManager.PlayerName = playerNameField.text;
 
-        MenuPanelsManager.SetActiveInLeftPanel(MenuPanelsManager.instance.connectingPanel);
+        // make sure the network core exists; no master server needed with Mirror LAN
+        CODNetworkManager.EnsureExists();
 
-        PhotonNetwork.LocalPlayer.NickName = playerNameField.text;
-        PhotonNetwork.ConnectUsingSettings();
-    }
-
-    #endregion
-
-    #region Photon callbacks
-
-    public override void OnConnected()
-    {
-        Debug.Log("Connected");
-    }
-
-    public override void OnConnectedToMaster()
-    {
-        Debug.Log(PhotonNetwork.LocalPlayer.NickName + " connected!");
-        PhotonNetwork.GameVersion = Application.version;
+        Debug.Log(CODNetworkManager.PlayerName + " logged in");
         MenuPanelsManager.SetActiveInLeftPanel(MenuPanelsManager.instance.selectRoomPanel);
-    }
-    public override void OnLeftRoom()
-    {
-        //PhotonNetwork.LoadLevel("StartMenu");
-        Debug.Log("LEADADA");
-
     }
 
     #endregion

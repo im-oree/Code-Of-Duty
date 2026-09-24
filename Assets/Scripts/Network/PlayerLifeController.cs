@@ -1,6 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
-using Photon.Pun;
+using Mirror;
 using UnityEngine;
 
 public class PlayerLifeController : MonoBehaviour
@@ -15,7 +15,18 @@ public class PlayerLifeController : MonoBehaviour
     public List<MonoBehaviour> disableMonoBehComponentsOnDeath = new List<MonoBehaviour>();
     public List<GameObject> disableGameObjectsOnDeath = new List<GameObject>();
 
-    // Start is called before the first frame update
+    NetworkIdentity rootIdentity;
+    NetCMDs netCmds;
+
+    // no identity (offline test scenes) counts as the local player
+    bool IsLocalPlayer => rootIdentity == null || rootIdentity.isOwned;
+
+    void Awake()
+    {
+        rootIdentity = transform.root.GetComponent<NetworkIdentity>();
+        netCmds = transform.root.GetComponent<NetCMDs>();
+    }
+
     public void Die()
     {
         SpawnRagdollCopy();
@@ -23,7 +34,7 @@ public class PlayerLifeController : MonoBehaviour
         hitBoxColidersList.HitboxesAsTriggers(true);
         characterController.enabled = false;
 
-        if (transform.root.GetComponent<PhotonView>().IsMine)
+        if (IsLocalPlayer)
         {
             input_Handler.enabled = false;
             characterMove.enabled = false;
@@ -59,7 +70,8 @@ public class PlayerLifeController : MonoBehaviour
             yield return null;
         }
 
-        transform.root.GetComponent<PhotonView>().RPC("RespawnRPC", RpcTarget.All);
+        if (netCmds != null) netCmds.RequestRespawn();
+        else Respawn(); // offline fallback
         yield break;
     }
 
@@ -86,10 +98,9 @@ public class PlayerLifeController : MonoBehaviour
 
         hitBoxColidersList.HitboxesAsTriggers(false);
 
-        if (transform.root.GetComponent<PhotonView>().IsMine)
+        if (IsLocalPlayer)
         {
             input_Handler.enabled = true;
-            characterMove.enabled = true;
             characterMove.enabled = true;
 
             UIManger.instance.respawnPanel.respawnPanelObject.SetActive(false);
@@ -100,7 +111,17 @@ public class PlayerLifeController : MonoBehaviour
     private void SpawnRagdollCopy()
     {
         var playerGO = Instantiate(playerRagdollObject, playerRagdollObject.transform.position, playerRagdollObject.transform.rotation);
-        Destroy(playerGO.GetComponent<PhotonAnimatorView>());
+
+        // strip every networking component from the local-only ragdoll copy
+        foreach (var networkBehaviour in playerGO.GetComponentsInChildren<NetworkBehaviour>(true))
+        {
+            Destroy(networkBehaviour);
+        }
+        foreach (var identity in playerGO.GetComponentsInChildren<NetworkIdentity>(true))
+        {
+            Destroy(identity);
+        }
+
         Destroy(playerGO.GetComponent<Animator>());
         playerGO.GetComponent<RigExecutor>().rigActive = false;
 
