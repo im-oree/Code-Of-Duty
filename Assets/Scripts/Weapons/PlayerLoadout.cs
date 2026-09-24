@@ -19,6 +19,9 @@ public class PlayerLoadout : NetworkBehaviour
 
     [SerializeField] private WeaponController weaponController;
 
+    [Tooltip("Networked matches: every dynamically spawned gun fires this bullet instead of the offline one.")]
+    [SerializeField] private GameObject networkBulletPrefab;
+
     readonly SyncVar<string> loadoutCsv = new SyncVar<string>("");
 
     string appliedCsv;
@@ -90,13 +93,13 @@ public class PlayerLoadout : NetworkBehaviour
             GameObject prefab = database.GetPrefab(id);
             if (prefab == null) continue;
 
-            ReplaceSlotWeapon(weaponController.slots[slotIndex], prefab);
+            ReplaceSlotWeapon(weaponController.slots[slotIndex], prefab, networkBulletPrefab);
         }
 
         appliedCsv = csv;
     }
 
-    public static void ReplaceSlotWeapon(WeaponSlotRig slot, GameObject weaponPrefab)
+    public static void ReplaceSlotWeapon(WeaponSlotRig slot, GameObject weaponPrefab, GameObject networkBullet = null)
     {
         if (slot == null || weaponPrefab == null) return;
 
@@ -115,5 +118,12 @@ public class PlayerLoadout : NetworkBehaviour
         GameObject weapon = Instantiate(weaponPrefab, slot.transform, false);
         weapon.name = weaponPrefab.name;
         weapon.transform.SetSiblingIndex(0); // systems expect the gun as first child
+
+        // networked matches use the synced bullet
+        if (networkBullet != null)
+        {
+            foreach (var w in weapon.GetComponentsInChildren<Weapon>(true))
+                w.bulletPrefab = networkBullet;
+        }
     }
 }

@@ -111,10 +111,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
-    - target: {fileID: 79461216, guid: 1711848c311a7e84a8d4e466405d6c0c, type: 3}
-      propertyPath: bulletPrefab
-      value: 
-      objectReference: {fileID: 6661778680664588510, guid: 3f225856e3c5e294186d8d6567f4458e, type: 3}
     - target: {fileID: 279363035, guid: 1711848c311a7e84a8d4e466405d6c0c, type: 3}
       propertyPath: bulletPrefab
       value: 
@@ -156,10 +152,6 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1496125952, guid: 1711848c311a7e84a8d4e466405d6c0c, type: 3}
-      propertyPath: bulletPrefab
-      value: 
-      objectReference: {fileID: 6661778680664588510, guid: 3f225856e3c5e294186d8d6567f4458e, type: 3}
-    - target: {fileID: 1575242329, guid: 1711848c311a7e84a8d4e466405d6c0c, type: 3}
       propertyPath: bulletPrefab
       value: 
       objectReference: {fileID: 6661778680664588510, guid: 3f225856e3c5e294186d8d6567f4458e, type: 3}
@@ -1101,6 +1093,7 @@ MonoBehaviour:
   _addedNetworkObject: {fileID: 3714865847120627326}
   _networkObjectCache: {fileID: 0}
   weaponController: {fileID: 8563434047993994482}
+  networkBulletPrefab: {fileID: 6661778680664588510, guid: 3f225856e3c5e294186d8d6567f4458e, type: 3}
 --- !u!114 &5544332211998877666
 MonoBehaviour:
   m_ObjectHideFlags: 0

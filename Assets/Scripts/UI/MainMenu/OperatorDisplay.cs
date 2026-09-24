@@ -223,11 +223,14 @@ public class OperatorDisplay : MonoBehaviour
     void HideHolsteredDuplicate(string weaponName)
     {
         if (model == null) return;
-        foreach (var slot in model.GetComponentsInChildren<WeaponSlotRig>(true))
+
+        // the display model's scripts are stripped, so find slot rigs by NAME
+        // and hide every baked gun — the operator only holds the loadout gun
+        foreach (var t in model.GetComponentsInChildren<Transform>(true))
         {
-            if (slot.transform.childCount == 0) continue;
-            Transform holstered = slot.transform.GetChild(0);
-            holstered.gameObject.SetActive(!holstered.name.StartsWith(weaponName));
+            if (!t.name.EndsWith("SlotRig")) continue;
+            foreach (Transform holstered in t)
+                holstered.gameObject.SetActive(false);
         }
     }
 
