@@ -65,5 +65,17 @@ public class WeaponSlotRig : LocalRig
         constrained.position = Vector3.Lerp(inactiveSlot.position, inHandsPosition, weight);
 
         constrained.rotation = Quaternion.Lerp(inactiveSlot.rotation, inHandsRotation, weight);
+
+        // procedural movement pose (sprint / tac-sprint raise, driven by
+        // WeaponMovementPose) — applied on top of the hand constraint in the
+        // gun's local space, weighted so there is never any snapping
+        if (poseLocalEuler != Vector3.zero || poseLocalPosition != Vector3.zero)
+        {
+            constrained.rotation = constrained.rotation * Quaternion.Euler(poseLocalEuler * weight);
+            constrained.position += constrained.rotation * (poseLocalPosition * weight);
+        }
     }
+
+    [HideInInspector] public Vector3 poseLocalPosition;
+    [HideInInspector] public Vector3 poseLocalEuler;
 }

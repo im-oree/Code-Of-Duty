@@ -54,6 +54,9 @@ public class CharacterMove : MonoBehaviour
 
     public float jumpHeight = 1f;
 
+    /// <summary>Runtime multiplier on sprintSpeed (driven by tac-sprint). 1 = normal sprint.</summary>
+    [HideInInspector] public float sprintSpeedMultiplier = 1f;
+
     [Header("Velocity values")]
     public Vector3 moveVelocity;
     public Vector3 velocity;

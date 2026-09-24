@@ -58,6 +58,9 @@ public class StandState : MoveStateBase
 
         Quaternion moveForward = Quaternion.Euler(0, characterMove.directionOrienter.rotation.eulerAngles.y, 0);
 
+        // tac-sprint: multiplier is live-driven, so refresh sprint speed every frame
+        if (isSprint) targetSpeed = characterMove.sprintSpeed * characterMove.sprintSpeedMultiplier;
+
         var isMove = inputVector.magnitude == 0 | characterMove.edgeSlipVelocity.magnitude != 0 ? 0 : targetSpeed; //
 
         currentSpeed = SpeedValueChange(currentSpeed, isMove, speedChangeRate);

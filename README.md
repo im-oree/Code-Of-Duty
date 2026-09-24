@@ -42,11 +42,22 @@ Networking is the base of everything — all game logic flows through the server
   every client by swapping the guns inside the player's `WeaponController`
   slot rigs at spawn. Slot count is read from the prefab — changing to a
   2-gun inventory requires **zero** scene changes.
-- **`CameraShakeRig`** (local-only juice): bridges *EZ Camera Shake* with the
-  Cinemachine camera (the brain owns the transform, so shake offsets are
-  composed on top of it after `LateUpdate`). Fire kick on every shot,
-  damage flinch scaled by damage taken, heavy rumble on death. Ownership-gated
-  so remote players' shots never shake your screen.
+- **`CameraShake`** (native, in-house): perlin-noise camera-feel engine with
+  per-state presets — fire kick (scaled by weapon class), damage flinch, death
+  rumble, landing thud (scaled by fall speed), jump pop, melee whoosh,
+  distance-scaled explosions, sustained movement rumble (walk/sprint/tac).
+  Cinemachine-safe (composes after the brain), ownership-gated so remote
+  players never shake your screen.
+- **`WeaponMovementPose`** (COD-style handling): procedural weapon poses for
+  movement states, all SmoothDamp-blended — sprint keeps the gun UP and in
+  frame; **tac sprint** (double-tap Shift) is a timed speed burst with a
+  one-handed muzzle-up pose (off-hand released via IK; pistols use a lighter
+  raise), plus subtle hand-wobble vibration while moving.
+- **2-weapon loadout** (primary + secondary) with **melee stance** on key 3
+  (gun stowed, punch with LMB). Holstered guns are invisible — switching
+  (faster, 0.09s blend) pulls the gun up COD-style instead of reaching to the
+  back. Locomotion clips are speed-synced (`locomotionSpeed` animator
+  parameter) so faster movement never foot-slides.
 - **`CharacterSkinLibrary`** + **`PlayerAppearance`** (networked): operator
   selection (Crimson / Cobalt), synced to all players in the match.
   Cobalt's `modelOverride` is wired to `Male_Body_BaseMesh.fbx`: at spawn the
