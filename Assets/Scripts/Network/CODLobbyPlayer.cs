@@ -27,17 +27,13 @@ public class CODLobbyPlayer : NetworkBehaviour
         playerName.OnChange += OnNameChanged;
     }
 
-    public override void OnStartServer()
-    {
-        base.OnStartServer();
-        // lobby players survive the scene change until they are replaced
-        DontDestroyOnLoad(gameObject);
-    }
+    // NOTE: lobby players survive the scene change until they are replaced —
+    // handled by the NetworkObject's IsGlobal flag on the prefab (FishNet
+    // forbids DontDestroyOnLoad inside NetworkBehaviours, error FN0002).
 
     public override void OnStartClient()
     {
         base.OnStartClient();
-        DontDestroyOnLoad(gameObject);
 
         if (!All.Contains(this)) All.Add(this);
         LobbyChanged?.Invoke();
