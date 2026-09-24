@@ -6,7 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/SampleScene.unity
-    guid: 99c9720ab356a0642a771bea13969a05
-  m_configObjects:
-    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    path: Assets/Online_FPS_TPS_KIT/Scenes/StartMenu.unity
+    guid: 4e89944c86d5506489f2d5d07f15e67a
+  - enabled: 1
+    path: Assets/Online_FPS_TPS_KIT/Scenes/DMArena1.unity
+    guid: 63ad0ce23cec82741ac0aba526506044
+  m_configObjects: {}
