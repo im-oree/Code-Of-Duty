@@ -29,6 +29,8 @@ public class JumpState : MoveStateBase
         characterMove.velocity.z = characterMove.moveVelocity.z;
         characterMove.velocity.y = Mathf.Sqrt(characterMove.jumpHeight * -2 * characterMove.gravity);
         characterMove.moveVelocity = Vector3.zero;
+
+        if (NetOwnership.IsLocal(characterMove)) CameraShake.JumpKick();
     }
     public override void OnStateExit()
     {

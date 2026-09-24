@@ -64,8 +64,23 @@ public class RecoilController : MonoBehaviour
     {
         StopAllCoroutines();
 
-        // cosmetic screen-shake layered on top of the aim recoil (local only)
-        if (IsLocalRig) CameraShakeRig.FireKick();
+        // cosmetic screen-shake layered on top of the aim recoil (local only).
+        // heavier weapon classes kick the camera harder.
+        if (IsLocalRig)
+        {
+            Weapon weapon = weaponController.GETCurrentWeapon;
+            float strength = 0.5f;
+            if (weapon != null)
+            {
+                switch (weapon.slotType)
+                {
+                    case Weapon.SlotType.rifle: strength = weapon.singleShoot ? 0.95f : 0.55f; break;
+                    case Weapon.SlotType.smg: strength = 0.35f; break;
+                    case Weapon.SlotType.pistol: strength = 0.5f; break;
+                }
+            }
+            CameraShake.FireKick(strength);
+        }
 
         StartCoroutine(ApplyCameraRecoil(weaponController.GETCurrentWeapon.recoilParametersModel.cameraRecoilAxes));
 

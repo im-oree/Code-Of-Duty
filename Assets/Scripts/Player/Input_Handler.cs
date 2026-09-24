@@ -96,7 +96,7 @@ public class Input_Handler : MonoBehaviour
         Camera cam = Camera.main;
         if (cam == null) return;
 
-        CameraShakeRig.FireKick(); // punch feedback
+        CameraShake.MeleeSwing(); // punch feedback
 
         var hits = Physics.RaycastAll(cam.transform.position, cam.transform.forward, 2.4f);
         System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));

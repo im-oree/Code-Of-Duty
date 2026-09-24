@@ -29,6 +29,10 @@ public class CharacterMove : MonoBehaviour
             if (!_isGrounded && currentState != inAirState)
                 SetState(inAirState);
 
+            // landing thud for the local player, scaled by fall speed
+            if (_isGrounded && NetOwnership.IsLocal(this))
+                CameraShake.Land(velocity.y);
+
             animator.SetBool("isGrounded", value);
 
             OnGroundedValueChange.Invoke(value);
