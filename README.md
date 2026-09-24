@@ -42,6 +42,11 @@ Networking is the base of everything — all game logic flows through the server
   every client by swapping the guns inside the player's `WeaponController`
   slot rigs at spawn. Slot count is read from the prefab — changing to a
   2-gun inventory requires **zero** scene changes.
+- **`CameraShakeRig`** (local-only juice): bridges *EZ Camera Shake* with the
+  Cinemachine camera (the brain owns the transform, so shake offsets are
+  composed on top of it after `LateUpdate`). Fire kick on every shot,
+  damage flinch scaled by damage taken, heavy rumble on death. Ownership-gated
+  so remote players' shots never shake your screen.
 - **`CharacterSkinLibrary`** + **`PlayerAppearance`** (networked): operator
   selection (Crimson / Cobalt), synced to all players in the match.
   Cobalt's `modelOverride` is wired to `Male_Body_BaseMesh.fbx`: at spawn the

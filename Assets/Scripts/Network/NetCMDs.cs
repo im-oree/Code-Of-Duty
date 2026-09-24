@@ -200,6 +200,13 @@ public class NetCMDs : NetworkBehaviour
     {
         float health = playerHealth.SetDamage(damage);
 
+        // screen-shake feedback for the LOCAL player only
+        if (IsOwner)
+        {
+            if (health <= 0f) CameraShakeRig.Explosion();
+            else CameraShakeRig.HitReaction(damage);
+        }
+
         if (health <= 0f && killer != null)
         {
             bool involvesLocalPlayer = killer.IsOwner | IsOwner;

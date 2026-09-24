@@ -17,6 +17,23 @@ public class RecoilController : MonoBehaviour
     public Vector3 lastPosition;
     public Quaternion lastRotation;
 
+    // OnShoot also fires on REMOTE rigs (NetCMDs.ObserversShoot replays shots
+    // for visuals) — only the locally-owned rig may shake the local camera.
+    FishNet.Object.NetworkObject _netObject;
+    bool _netObjectSearched;
+    bool IsLocalRig
+    {
+        get
+        {
+            if (!_netObjectSearched)
+            {
+                _netObject = GetComponentInParent<FishNet.Object.NetworkObject>();
+                _netObjectSearched = true;
+            }
+            return _netObject == null || _netObject.IsOwner; // null = offline rig
+        }
+    }
+
     private void OnEnable()
     {
         eventsCenter.OnWeaponChange += weaponChangeCheck;
@@ -46,6 +63,9 @@ public class RecoilController : MonoBehaviour
     void RecoilStarter()
     {
         StopAllCoroutines();
+
+        // cosmetic screen-shake layered on top of the aim recoil (local only)
+        if (IsLocalRig) CameraShakeRig.FireKick();
 
         StartCoroutine(ApplyCameraRecoil(weaponController.GETCurrentWeapon.recoilParametersModel.cameraRecoilAxes));
 
