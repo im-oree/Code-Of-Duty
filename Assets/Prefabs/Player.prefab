@@ -5354,12 +5354,12 @@ MonoBehaviour:
     m_Bits: 1
   edgeFallMoveForce: 5
   noSlipDistance: 0.17
-  gravity: -9.81
-  walkSpeed: 1.5
-  runSpeed: 3
-  sprintSpeed: 5
-  crouchSpeed: 1
-  jumpHeight: 1
+  gravity: -18
+  walkSpeed: 2.4
+  runSpeed: 4.2
+  sprintSpeed: 5.8
+  crouchSpeed: 1.8
+  jumpHeight: 1.05
   moveVelocity: {x: 0, y: 0, z: 0}
   velocity: {x: 0, y: 0, z: 0}
   rollVelocity: {x: 0, y: 0, z: 0}

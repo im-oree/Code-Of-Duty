@@ -72,6 +72,12 @@ public class CharacterMove : MonoBehaviour
     public int isGroundID { get; private set; }
     public int sprintID { get; private set; }
     public int rollID { get; private set; }
+    public int locomotionSpeedID { get; private set; }
+
+    [Tooltip("Ground speed the standing locomotion clips were authored for (anim sync baseline).")]
+    public float standAnimReferenceSpeed = 3f;
+    [Tooltip("Ground speed the crouch locomotion clips were authored for (anim sync baseline).")]
+    public float crouchAnimReferenceSpeed = 1.1f;
 
     IEnumerator colliderSizeChangeCor;
 
@@ -201,6 +207,21 @@ public class CharacterMove : MonoBehaviour
         rollID = Animator.StringToHash("roll");
         walkID = Animator.StringToHash("walk");
         crouchID = Animator.StringToHash("crouch");
+        locomotionSpeedID = Animator.StringToHash("locomotionSpeed");
+    }
+
+    float smoothedLocomotionSync = 1f;
+
+    /// <summary>
+    /// Keeps foot animation speed matched to actual ground speed so higher
+    /// move speeds never cause foot sliding. referenceSpeed = the ground
+    /// speed the locomotion clips were authored for.
+    /// </summary>
+    public void SyncLocomotionAnimation(float groundSpeed, float referenceSpeed)
+    {
+        float target = groundSpeed > 0.25f ? Mathf.Clamp(groundSpeed / referenceSpeed, 0.5f, 2.4f) : 1f;
+        smoothedLocomotionSync = Mathf.Lerp(smoothedLocomotionSync, target, Time.deltaTime * 8f);
+        animator.SetFloat(locomotionSpeedID, smoothedLocomotionSync);
     }
 
 }

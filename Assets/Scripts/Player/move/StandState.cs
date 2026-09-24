@@ -84,6 +84,9 @@ public class StandState : MoveStateBase
 
         characterMove.animator.SetFloat(characterMove.horizontalInputID, inputVector.x);
         characterMove.animator.SetFloat(characterMove.verticalInputID, inputVector.y);
+
+        // foot-sliding prevention: clip speed follows actual ground speed
+        characterMove.SyncLocomotionAnimation(currentSpeed * inputVector.magnitude, characterMove.standAnimReferenceSpeed);
     }
 
     private float SpeedValueChange(float inputValue, float targetvalue, float changeRateValue)
