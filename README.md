@@ -44,7 +44,13 @@ Networking is the base of everything — all game logic flows through the server
   2-gun inventory requires **zero** scene changes.
 - **`CharacterSkinLibrary`** + **`PlayerAppearance`** (networked): operator
   selection (Crimson / Cobalt), synced to all players in the match.
-  `modelOverride` slot is ready for the imported `Male_Body_BaseMesh` rig.
+  Cobalt's `modelOverride` is wired to `Male_Body_BaseMesh.fbx`: at spawn the
+  override model is instantiated and its skinned meshes are **rebound to the
+  live player skeleton by bone name**, then the original body is hidden.
+  ⚠️ The current FBX is an *unrigged* static mesh (no skin weights), so the
+  swap safely skips with a console warning until the model is rigged (Mixamo
+  or Blender) using the kit skeleton's bone names — after that it goes live
+  with zero code changes.
 
 ## Main menu
 
@@ -110,8 +116,12 @@ Docs/                    # Kit documentation (PDF + readme)
    - internal server for offline play, LAN host/join + discovery, dedicated-server ready
 3. ~~Dynamic loadout + operator systems, COD-style 3D main menu~~ ✅
 4. Import GLB guns as prefabs via the Weapon Setup Wizard (in-editor step)
-5. New arena layout + full map restyle
-6. Swap in Male_Body_BaseMesh as the Cobalt operator model
+5. ~~New arena layout + full map restyle~~ ✅ — **Foundry** (64×64 industrial
+   arena: central smelter platform w/ 4 ramps, red/blue container lanes,
+   N/S catwalks, corner crate nests; 8 flat-tint URP materials in
+   `Assets/Materials/Arena/`; realtime lighting — re-bake if you want baked GI)
+6. Swap in Male_Body_BaseMesh as the Cobalt operator model (pipeline done —
+   blocked on rigging the FBX, see above)
 7. Bots / AI, game modes (TDM, FFA), progression
 
 ## Testing multiplayer
