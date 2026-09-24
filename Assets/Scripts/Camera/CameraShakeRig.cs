@@ -65,7 +65,12 @@ public class CameraShakeRig : MonoBehaviour
     {
         // Hidden proxy the CameraShaker animates. Unique name keeps
         // CameraShaker's internal name->instance registry collision-free.
+        // GetInstanceID() is obsolete on Unity 6000.5+, which exposes GetEntityId() instead.
+#if UNITY_6000_5_OR_NEWER
+        var proxyGO = new GameObject($"CameraShakeProxy_{GetEntityId()}");
+#else
         var proxyGO = new GameObject($"CameraShakeProxy_{GetInstanceID()}");
+#endif
         proxyGO.hideFlags = HideFlags.HideInHierarchy;
         proxyGO.transform.SetParent(transform, false);
         proxy = proxyGO.transform;
