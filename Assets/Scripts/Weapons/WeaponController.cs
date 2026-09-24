@@ -23,6 +23,15 @@ public class WeaponController : MonoBehaviour
     public int nextID;
     public Transform offsetForGun; // transform forOffset 
 
+    [Header("COD-style handling")]
+    [Tooltip("Guns not in hand are invisible (pulled 'from below' on switch) instead of showing on the body.")]
+    public bool hideHolsteredGuns = true;
+    [Tooltip("Cross-fade time into the weapon-switch animation. Lower = snappier COD-style swaps.")]
+    public float switchBlendTime = 0.09f;
+
+    /// <summary>True while the player is unarmed (melee stance).</summary>
+    public bool MeleeMode { get; private set; }
+
     // shoot event, called when fired
     public delegate void Shoot();
     public event Shoot OnShoot;
@@ -151,11 +160,74 @@ public class WeaponController : MonoBehaviour
     public void ToChange(int nextGunSlotID)
     {
         if (changed) return;
+        if (nextGunSlotID < 1 || nextGunSlotID > slots.Length) return;
+
+        if (MeleeMode) SetMelee(false); // drawing a gun leaves melee stance
+
         if (activeID == nextGunSlotID) return;
 
         string animaName = "PutSlot" + activeID;
         this.nextID = nextGunSlotID;
 
-        animator.CrossFadeInFixedTime(animaName, 0.25f, 1);
+        animator.CrossFadeInFixedTime(animaName, switchBlendTime, 1);
     }
+
+    #region COD-style visibility & melee
+
+    void LateUpdate()
+    {
+        if (!hideHolsteredGuns || slots == null) return;
+
+        for (int i = 0; i < slots.Length; i++)
+        {
+            var slot = slots[i];
+            if (slot == null) continue;
+
+            Weapon weapon = slot.GetComponentInChildren<Weapon>(true);
+            if (weapon == null) continue;
+
+            int id = i + 1;
+            bool visible = !MeleeMode && (id == activeID || (changed && id == nextID));
+            if (weapon.gameObject.activeSelf != visible)
+                weapon.gameObject.SetActive(visible);
+        }
+    }
+
+    /// <summary>Unarmed stance: gun stowed (hidden), hands released from the weapon IK.</summary>
+    public void SetMelee(bool active)
+    {
+        if (MeleeMode == active || changed) return;
+
+        MeleeMode = active;
+        canShoot = !active;
+        StopCoroutine(nameof(MeleeBlend));
+        StartCoroutine(nameof(MeleeBlend), active);
+    }
+
+    IEnumerator MeleeBlend(bool active)
+    {
+        var slot = GETCurrentSlot;
+        float startSlot = slot.weight;
+        float startR = rightHandIK.weight;
+        float startL = leftHandIK.weight;
+        float end = active ? 0f : 1f;
+
+        float t = 0f;
+        const float duration = 0.16f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float k = Mathf.SmoothStep(0f, 1f, t / duration);
+            slot.weight = Mathf.Lerp(startSlot, end, k);
+            rightHandIK.weight = Mathf.Lerp(startR, end, k);
+            leftHandIK.weight = Mathf.Lerp(startL, end, k);
+            yield return null;
+        }
+
+        slot.weight = end;
+        rightHandIK.weight = end;
+        leftHandIK.weight = end;
+    }
+
+    #endregion
 }

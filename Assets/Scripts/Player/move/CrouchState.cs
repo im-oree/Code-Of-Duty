@@ -35,6 +35,9 @@ public class CrouchState : MoveStateBase
 
         characterMove.animator.SetFloat(characterMove.horizontalInputID, horizontalInput);
         characterMove.animator.SetFloat(characterMove.verticalInputID, verticalInput);
+
+        // foot-sliding prevention: clip speed follows actual ground speed
+        characterMove.SyncLocomotionAnimation(characterMove.moveVelocity.magnitude, characterMove.crouchAnimReferenceSpeed);
     }
 
     public override void OnStateExit()

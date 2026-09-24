@@ -13,6 +13,8 @@ public class OperatorDisplay : MonoBehaviour
     Transform rightHand;
     GameObject handWeapon;
     float idleSeed;
+    Quaternion baseRotation = Quaternion.identity;
+    float groundedLocalY;
 
     public static OperatorDisplay Create(Transform parent, Vector3 position, Quaternion rotation)
     {
@@ -61,6 +63,30 @@ public class OperatorDisplay : MonoBehaviour
         }
 
         if (rightHand == null) rightHand = FindBoneByName(model.transform, "hand_r", "righthand", "hand.r");
+
+        GroundModel();
+        baseRotation = transform.localRotation;
+    }
+
+    /// <summary>Drops the model so the lowest visible point sits exactly on y = 0 (no floating).</summary>
+    void GroundModel()
+    {
+        if (model == null) return;
+        var renderers = model.GetComponentsInChildren<Renderer>(false);
+        if (renderers.Length == 0) return;
+
+        float minY = float.MaxValue;
+        foreach (var r in renderers)
+        {
+            if (r is ParticleSystemRenderer) continue;
+            minY = Mathf.Min(minY, r.bounds.min.y);
+        }
+        if (minY == float.MaxValue) return;
+
+        Vector3 p = model.transform.position;
+        p.y -= minY - transform.position.y;
+        model.transform.position = p;
+        groundedLocalY = model.transform.localPosition.y;
     }
 
     static GameObject ResolvePlayerPrefab()
@@ -197,11 +223,14 @@ public class OperatorDisplay : MonoBehaviour
     void HideHolsteredDuplicate(string weaponName)
     {
         if (model == null) return;
-        foreach (var slot in model.GetComponentsInChildren<WeaponSlotRig>(true))
+
+        // the display model's scripts are stripped, so find slot rigs by NAME
+        // and hide every baked gun — the operator only holds the loadout gun
+        foreach (var t in model.GetComponentsInChildren<Transform>(true))
         {
-            if (slot.transform.childCount == 0) continue;
-            Transform holstered = slot.transform.GetChild(0);
-            holstered.gameObject.SetActive(!holstered.name.StartsWith(weaponName));
+            if (!t.name.EndsWith("SlotRig")) continue;
+            foreach (Transform holstered in t)
+                holstered.gameObject.SetActive(false);
         }
     }
 
@@ -209,14 +238,15 @@ public class OperatorDisplay : MonoBehaviour
 
     void Update()
     {
-        // subtle breathing / weight-shift so the operator feels alive even
-        // if the animator idle is static
+        // subtle breathing / weight-shift so the operator feels alive even if
+        // the animator idle is static. ABSOLUTE offsets from the base pose —
+        // never accumulated — so the facing can never drift over time.
         float t = Time.time + idleSeed;
-        transform.localRotation *= Quaternion.Euler(0f, Mathf.Sin(t * 0.22f) * 0.02f, 0f);
+        transform.localRotation = baseRotation * Quaternion.Euler(0f, Mathf.Sin(t * 0.22f) * 1.5f, 0f);
         if (model != null)
         {
             Vector3 p = model.transform.localPosition;
-            p.y = Mathf.Sin(t * 1.1f) * 0.004f;
+            p.y = groundedLocalY + Mathf.Sin(t * 1.1f) * 0.004f;
             model.transform.localPosition = p;
         }
     }

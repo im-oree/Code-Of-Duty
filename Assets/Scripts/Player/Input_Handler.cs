@@ -30,14 +30,13 @@ public class Input_Handler : MonoBehaviour
 
         //bodyTiltInSprint.SetMouseXMove(Input.GetAxis("Mouse X"));
 
+        // 2-weapon loadout: 1 = primary, 2 = secondary, 3 = melee (unarmed)
         if (Input.GetKeyDown(KeyCode.Alpha1))
             weaponController.ToChange(1);
         if (Input.GetKeyDown(KeyCode.Alpha2))
             weaponController.ToChange(2);
         if (Input.GetKeyDown(KeyCode.Alpha3))
-            weaponController.ToChange(3);
-        if (Input.GetKeyDown(KeyCode.Alpha4))
-            weaponController.ToChange(4);
+            weaponController.SetMelee(!weaponController.MeleeMode);
 
 
         if (Input.GetKeyDown(KeyCode.F) && weaponPickUp != null)
@@ -67,7 +66,16 @@ public class Input_Handler : MonoBehaviour
 
     void TryShoot()
     {
-        bool singleshoot = weaponController.GETCurrentWeapon.singleShoot;
+        if (weaponController.MeleeMode)
+        {
+            if (Input.GetMouseButtonDown(0)) TryMelee();
+            return;
+        }
+
+        Weapon current = weaponController.GETCurrentWeapon;
+        if (current == null) return;
+
+        bool singleshoot = current.singleShoot;
         if (singleshoot && Input.GetMouseButtonDown(0))
         {
             weaponController.StartShoot();
@@ -75,6 +83,39 @@ public class Input_Handler : MonoBehaviour
         else if (!singleshoot && Input.GetMouseButton(0))
         {
             weaponController.StartShoot();
+        }
+    }
+
+    float nextMeleeTime;
+
+    void TryMelee()
+    {
+        if (Time.time < nextMeleeTime) return;
+        nextMeleeTime = Time.time + 0.6f;
+
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        CameraShakeRig.FireKick(); // punch feedback
+
+        var hits = Physics.RaycastAll(cam.transform.position, cam.transform.forward, 2.4f);
+        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        foreach (var hit in hits)
+        {
+            if (hit.transform.root == transform.root) continue; // own body
+
+            var victim = hit.collider.GetComponentInParent<FishNet.Object.NetworkObject>();
+            var self = GetComponentInParent<NetCMDs>();
+            if (victim != null && self != null)
+            {
+                self.ServerDealDamage(victim, 45f, false, "Melee");
+            }
+            else
+            {
+                var health = hit.collider.GetComponentInParent<PlayerHealth>();
+                if (health != null) health.SetDamage(45f);
+            }
+            break;
         }
     }
 }

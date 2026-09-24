@@ -118,9 +118,15 @@ public class CODMainMenu : MonoBehaviour
 
     void BuildTopBar()
     {
-        // subtle gradient strip behind the tab bar
+        // full-width strip behind the tab bar (stretch-anchored so children
+        // measure from the real screen edge on every resolution)
         var bar = UITheme.Image("TopBar", transform, new Color(0f, 0f, 0f, 0.55f));
-        UITheme.Place(bar.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(4000, 86));
+        var barRect = bar.rectTransform;
+        barRect.anchorMin = new Vector2(0f, 1f);
+        barRect.anchorMax = new Vector2(1f, 1f);
+        barRect.pivot = new Vector2(0.5f, 1f);
+        barRect.offsetMin = new Vector2(0f, -86f);
+        barRect.offsetMax = Vector2.zero;
 
         var title = UITheme.Text("Logo", bar.transform, "CODE OF DUTY", 30, UITheme.TextMain,
             FontStyles.Bold | FontStyles.Italic);
@@ -166,9 +172,14 @@ public class CODMainMenu : MonoBehaviour
             if (!string.IsNullOrWhiteSpace(value)) CODNetworkManager.PlayerName = value.Trim();
         });
 
-        // bottom bar: version + quit
+        // bottom bar: version + quit (full-width, stretch-anchored)
         var bottom = UITheme.Image("BottomBar", transform, new Color(0f, 0f, 0f, 0.45f));
-        UITheme.Place(bottom.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(4000, 46));
+        var bottomRect = bottom.rectTransform;
+        bottomRect.anchorMin = new Vector2(0f, 0f);
+        bottomRect.anchorMax = new Vector2(1f, 0f);
+        bottomRect.pivot = new Vector2(0.5f, 0f);
+        bottomRect.offsetMin = Vector2.zero;
+        bottomRect.offsetMax = new Vector2(0f, 46f);
 
         var hint = UITheme.Text("Hint", bottom.transform, "LAN OPERATIONS  //  SERVER-AUTHORITATIVE  //  ALPHA BUILD", 13,
             UITheme.TextDim, FontStyles.Normal, TextAlignmentOptions.Left);
