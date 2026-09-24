@@ -73,6 +73,9 @@ public class PlayerAppearance : NetworkBehaviour
     {
         if (root == null || skin == null) return;
 
+        if (skin.modelOverride != null)
+            TrySwapModel(root, skin.modelOverride);
+
         var block = new MaterialPropertyBlock();
         foreach (var renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
         {
@@ -81,7 +84,71 @@ public class PlayerAppearance : NetworkBehaviour
             block.SetColor(ColorId, skin.tint);
             renderer.SetPropertyBlock(block);
         }
+    }
 
-        // future: full model swap once skin.modelOverride is assigned (rigged mesh)
+    const string OverrideNodeName = "BodyModelOverride";
+
+    /// <summary>
+    /// Full body-model swap: instantiates the override model and rebinds its
+    /// skinned meshes onto the player's existing skeleton by bone NAME, then
+    /// hides the original body renderers. Works with any mesh rigged to the
+    /// kit skeleton (same bone names). Unrigged meshes are skipped with a
+    /// warning — they cannot animate.
+    /// </summary>
+    static void TrySwapModel(GameObject root, GameObject overridePrefab)
+    {
+        Animator animator = root.GetComponentInChildren<Animator>(true);
+        Transform skeletonRoot = animator != null ? animator.transform : root.transform;
+
+        // already swapped?
+        foreach (Transform child in skeletonRoot)
+        {
+            if (child.name == OverrideNodeName) return;
+        }
+
+        var sourceRenderers = overridePrefab.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        if (sourceRenderers.Length == 0)
+        {
+            Debug.LogWarning($"[PlayerAppearance] '{overridePrefab.name}' has no skinned mesh (unrigged model?). " +
+                             "Rig it to the kit skeleton (same bone names) and it will swap in automatically.");
+            return;
+        }
+
+        // bone lookup of the live skeleton
+        var boneMap = new System.Collections.Generic.Dictionary<string, Transform>();
+        foreach (Transform bone in skeletonRoot.GetComponentsInChildren<Transform>(true))
+        {
+            if (!boneMap.ContainsKey(bone.name)) boneMap[bone.name] = bone;
+        }
+
+        GameObject instance = Instantiate(overridePrefab, skeletonRoot, false);
+        instance.name = OverrideNodeName;
+        instance.transform.localPosition = Vector3.zero;
+        instance.transform.localRotation = Quaternion.identity;
+
+        foreach (var renderer in instance.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            var newBones = new Transform[renderer.bones.Length];
+            for (int i = 0; i < newBones.Length; i++)
+            {
+                if (renderer.bones[i] == null || !boneMap.TryGetValue(renderer.bones[i].name, out newBones[i]))
+                {
+                    Debug.LogWarning($"[PlayerAppearance] Bone '{(renderer.bones[i] != null ? renderer.bones[i].name : "null")}' " +
+                                     $"not found on the player skeleton — model swap aborted for '{overridePrefab.name}'.");
+                    Destroy(instance);
+                    return;
+                }
+            }
+            renderer.bones = newBones;
+            if (renderer.rootBone != null && boneMap.TryGetValue(renderer.rootBone.name, out Transform newRoot))
+                renderer.rootBone = newRoot;
+        }
+
+        // hide the original body meshes (they stay for ragdoll/death systems)
+        foreach (var renderer in skeletonRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            if (!renderer.transform.IsChildOf(instance.transform))
+                renderer.enabled = false;
+        }
     }
 }
