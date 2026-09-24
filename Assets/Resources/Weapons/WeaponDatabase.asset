@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45bb1c5b516d95966df20bfef6a99454, type: 3}
+  m_Name: WeaponDatabase
+  m_EditorClassIdentifier: 
+  weapons:
+  - id: N4_Rifle
+    displayName: N4 Carbine
+    description: Reliable full-auto carbine. Balanced range and control.
+    prefab: {fileID: 985304021112885711, guid: 35772b39c6785bc43bcbef7d3d0f9600, type: 3}
+  - id: Saga_Rifle
+    displayName: Saga AR
+    description: Hard-hitting battle rifle for mid-long engagements.
+    prefab: {fileID: 599794015, guid: 83e00367807ebba40b0dade6f9487778, type: 3}
+  - id: P6_SMG
+    displayName: P6 SMG
+    description: High rate of fire. Owns every close-quarters fight.
+    prefab: {fileID: 334654602, guid: 11bb7e2dac3ddc74dbb6aaef255af9a2, type: 3}
+  - id: Glok_Pistol
+    displayName: Glok 19
+    description: Fast-draw sidearm. Never be caught reloading.
+    prefab: {fileID: 425936155466849112, guid: 46a4cef94db477b44853ac449a673553, type: 3}

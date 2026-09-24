@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Mirror;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -21,7 +20,7 @@ public class MenuRooms : MonoBehaviour
         discoveredServers.Clear();
         ClearRoomList();
 
-        if (discovery != null && !NetworkServer.active && !NetworkClient.active)
+        if (discovery != null && !CODNetworkManager.SessionActive)
         {
             discovery.OnServerFound.AddListener(OnServerDiscovered);
             discovery.StartDiscovery();
@@ -35,7 +34,7 @@ public class MenuRooms : MonoBehaviour
             discovery.OnServerFound.RemoveListener(OnServerDiscovered);
 
             // don't kill the broadcast when we're hosting/connected
-            if (!NetworkServer.active && !NetworkClient.active)
+            if (!CODNetworkManager.SessionActive)
             {
                 discovery.StopDiscovery();
             }
@@ -61,16 +60,16 @@ public class MenuRooms : MonoBehaviour
             roomItemObject.transform.GetChild(0).GetComponent<TMP_Text>().text = info.serverName;
             roomItemObject.transform.GetChild(1).GetComponent<TMP_Text>().text = info.players.ToString() + "/" + info.maxPlayers.ToString();
 
-            System.Uri joinUri = info.uri;
-            roomItemObject.transform.GetChild(2).GetComponent<Button>().onClick.AddListener(() => JoinRoomFromlist(joinUri));
+            string joinAddress = info.address;
+            roomItemObject.transform.GetChild(2).GetComponent<Button>().onClick.AddListener(() => JoinRoomFromlist(joinAddress));
 
             roomListGameobject.Add(roomItemObject);
         }
     }
 
-    private void JoinRoomFromlist(System.Uri uri)
+    private void JoinRoomFromlist(string address)
     {
-        CODNetworkManager.Instance.JoinGame(uri);
+        CODNetworkManager.Instance.JoinGame(address);
     }
 
     public void ClearRoomList()

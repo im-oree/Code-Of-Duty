@@ -1,10 +1,12 @@
-using Mirror;
+using FishNet;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
 using UnityEngine;
 
 /// <summary>
-/// Player network hub (Mirror). Lives on the player prefab root next to NetworkIdentity.
+/// Player network hub (FishNet). Lives on the player prefab root next to NetworkObject.
 /// - Syncs body slope / turn / active weapon (SyncVars, late joiners get state for free)
-/// - Replicates shooting and weapon switching (Commands -> ClientRpcs)
+/// - Replicates shooting and weapon switching (ServerRpc -> ObserversRpc)
 /// - Server-authoritative damage entry point + kill feed
 /// - Respawn round trip
 /// </summary>
@@ -21,17 +23,24 @@ public class NetCMDs : NetworkBehaviour
     [Tooltip("How many times per second the owner uploads body state (slope/turn/weapon)")]
     [SerializeField] private float bodySyncRate = 15f;
 
-    [SyncVar] public string playerName = "Player";
+    public readonly SyncVar<string> playerName = new SyncVar<string>("Player");
 
-    [SyncVar(hook = nameof(OnBodySlopeSynced))] float syncedBodySlope;
-    [SyncVar(hook = nameof(OnMomentaryTurnSynced))] bool syncedMomentaryTurn;
-    [SyncVar(hook = nameof(OnActiveWeaponSynced))] int syncedActiveWeaponID;
+    readonly SyncVar<float> syncedBodySlope = new SyncVar<float>();
+    readonly SyncVar<bool> syncedMomentaryTurn = new SyncVar<bool>();
+    readonly SyncVar<int> syncedActiveWeaponID = new SyncVar<int>();
 
     bool remoteStateInitialized;
     float nextBodySyncTime;
     float lastSentBodySlope = float.MinValue;
     bool lastSentMomentaryTurn;
     int lastSentActiveWeaponID = int.MinValue;
+
+    void Awake()
+    {
+        syncedBodySlope.OnChange += OnBodySlopeSynced;
+        syncedMomentaryTurn.OnChange += OnMomentaryTurnSynced;
+        syncedActiveWeaponID.OnChange += OnActiveWeaponSynced;
+    }
 
     void OnEnable()
     {
@@ -45,22 +54,30 @@ public class NetCMDs : NetworkBehaviour
         eventsCenter.OnWeaponChange -= WeaponChangeSender;
     }
 
-    public override void OnStartLocalPlayer()
+    void OnDestroy()
     {
-        CmdSetPlayerName(CODNetworkManager.PlayerName);
+        syncedBodySlope.OnChange -= OnBodySlopeSynced;
+        syncedMomentaryTurn.OnChange -= OnMomentaryTurnSynced;
+        syncedActiveWeaponID.OnChange -= OnActiveWeaponSynced;
     }
 
     public override void OnStartClient()
     {
-        if (!isOwned)
+        base.OnStartClient();
+
+        if (IsOwner)
+        {
+            ServerSetPlayerName(CODNetworkManager.PlayerName);
+        }
+        else
         {
             // snap remote/late-joined players to their current state
-            bodySlope_Handler.targetAngle = syncedBodySlope;
-            bodyTurnHandler.momentaryTurn = syncedMomentaryTurn;
+            bodySlope_Handler.targetAngle = syncedBodySlope.Value;
+            bodyTurnHandler.momentaryTurn = syncedMomentaryTurn.Value;
 
-            if (syncedActiveWeaponID != 0)
+            if (syncedActiveWeaponID.Value != 0)
             {
-                weaponController.activeID = syncedActiveWeaponID;
+                weaponController.activeID = syncedActiveWeaponID.Value;
                 weaponController.animator.Play("GunPickUp", 1);
             }
         }
@@ -70,7 +87,7 @@ public class NetCMDs : NetworkBehaviour
 
     void Update()
     {
-        if (!isOwned || !NetworkClient.active) return;
+        if (!IsOwner || !InstanceFinder.IsClientStarted) return;
         if (Time.time < nextBodySyncTime) return;
 
         float slope = bodySlope_Handler.targetAngle;
@@ -86,44 +103,47 @@ public class NetCMDs : NetworkBehaviour
             lastSentMomentaryTurn = turn;
             lastSentActiveWeaponID = weaponID;
 
-            CmdSyncBodyState(slope, turn, weaponID);
+            ServerSyncBodyState(slope, turn, weaponID);
         }
     }
 
     #region Name
 
-    [Command]
-    void CmdSetPlayerName(string newName)
+    [ServerRpc]
+    void ServerSetPlayerName(string newName)
     {
         if (!string.IsNullOrWhiteSpace(newName))
-            playerName = newName.Trim();
+            playerName.Value = newName.Trim();
     }
 
     #endregion
 
     #region Body state sync (owner -> server -> everyone)
 
-    [Command]
-    void CmdSyncBodyState(float bodySlope, bool momentaryTurn, int activeWeaponID)
+    [ServerRpc]
+    void ServerSyncBodyState(float bodySlope, bool momentaryTurn, int activeWeaponID)
     {
-        syncedBodySlope = bodySlope;
-        syncedMomentaryTurn = momentaryTurn;
-        syncedActiveWeaponID = activeWeaponID;
+        syncedBodySlope.Value = bodySlope;
+        syncedMomentaryTurn.Value = momentaryTurn;
+        syncedActiveWeaponID.Value = activeWeaponID;
     }
 
-    void OnBodySlopeSynced(float _, float value)
+    void OnBodySlopeSynced(float _, float value, bool asServer)
     {
-        if (!isOwned) bodySlope_Handler.targetAngle = value;
+        if (asServer) return;
+        if (!IsOwner) bodySlope_Handler.targetAngle = value;
     }
 
-    void OnMomentaryTurnSynced(bool _, bool value)
+    void OnMomentaryTurnSynced(bool _, bool value, bool asServer)
     {
-        if (!isOwned) bodyTurnHandler.momentaryTurn = value;
+        if (asServer) return;
+        if (!IsOwner) bodyTurnHandler.momentaryTurn = value;
     }
 
-    void OnActiveWeaponSynced(int _, int value)
+    void OnActiveWeaponSynced(int _, int value, bool asServer)
     {
-        if (!isOwned && remoteStateInitialized)
+        if (asServer) return;
+        if (!IsOwner && remoteStateInitialized)
             weaponController.activeID = value;
     }
 
@@ -133,14 +153,14 @@ public class NetCMDs : NetworkBehaviour
 
     void ShootSender()
     {
-        if (isOwned) CmdShoot();
+        if (IsOwner) ServerShoot();
     }
 
-    [Command]
-    void CmdShoot() => RpcShoot();
+    [ServerRpc]
+    void ServerShoot() => ObserversShoot();
 
-    [ClientRpc(includeOwner = false)]
-    void RpcShoot() => weaponController.StartShoot();
+    [ObserversRpc(ExcludeOwner = true)]
+    void ObserversShoot() => weaponController.StartShoot();
 
     #endregion
 
@@ -148,15 +168,15 @@ public class NetCMDs : NetworkBehaviour
 
     void WeaponChangeSender(bool changing)
     {
-        if (!changing || !isOwned) return;
-        CmdChangeWeapon(weaponController.nextID);
+        if (!changing || !IsOwner) return;
+        ServerChangeWeapon(weaponController.nextID);
     }
 
-    [Command]
-    void CmdChangeWeapon(int nextGunSlotID) => RpcChangeWeapon(nextGunSlotID);
+    [ServerRpc]
+    void ServerChangeWeapon(int nextGunSlotID) => ObserversChangeWeapon(nextGunSlotID);
 
-    [ClientRpc(includeOwner = false)]
-    void RpcChangeWeapon(int nextGunSlotID) => weaponController.ToChange(nextGunSlotID);
+    [ObserversRpc(ExcludeOwner = true)]
+    void ObserversChangeWeapon(int nextGunSlotID) => weaponController.ToChange(nextGunSlotID);
 
     #endregion
 
@@ -166,26 +186,26 @@ public class NetCMDs : NetworkBehaviour
     /// Called on the SHOOTER's player object by its owning client when a bullet hits.
     /// Runs on the server, which forwards authoritative damage to the victim.
     /// </summary>
-    [Command]
-    public void CmdDealDamage(NetworkIdentity target, float damage, bool hitOnTheHead, string weaponName)
+    [ServerRpc]
+    public void ServerDealDamage(NetworkObject target, float damage, bool hitOnTheHead, string weaponName)
     {
         if (target == null) return;
 
         if (target.TryGetComponent(out NetCMDs victim))
-            victim.RpcApplyDamage(damage, netIdentity, hitOnTheHead, weaponName);
+            victim.ObserversApplyDamage(damage, NetworkObject, hitOnTheHead, weaponName);
     }
 
-    [ClientRpc]
-    void RpcApplyDamage(float damage, NetworkIdentity killer, bool hitOnTheHead, string weaponName)
+    [ObserversRpc]
+    void ObserversApplyDamage(float damage, NetworkObject killer, bool hitOnTheHead, string weaponName)
     {
         float health = playerHealth.SetDamage(damage);
 
         if (health <= 0f && killer != null)
         {
-            bool involvesLocalPlayer = killer.isOwned | isOwned;
-            string killerName = killer.TryGetComponent(out NetCMDs killerCmds) ? killerCmds.playerName : "Unknown";
+            bool involvesLocalPlayer = killer.IsOwner | IsOwner;
+            string killerName = killer.TryGetComponent(out NetCMDs killerCmds) ? killerCmds.playerName.Value : "Unknown";
 
-            UIManger.instance.killPanel.CreateKillItemUI(killerName, playerName, weaponName, hitOnTheHead, involvesLocalPlayer);
+            UIManger.instance.killPanel.CreateKillItemUI(killerName, playerName.Value, weaponName, hitOnTheHead, involvesLocalPlayer);
         }
     }
 
@@ -196,14 +216,14 @@ public class NetCMDs : NetworkBehaviour
     /// <summary>Called by PlayerLifeController on the owning client when the respawn timer ends.</summary>
     public void RequestRespawn()
     {
-        if (isOwned) CmdRespawn();
+        if (IsOwner) ServerRespawn();
     }
 
-    [Command]
-    void CmdRespawn() => RpcRespawn();
+    [ServerRpc]
+    void ServerRespawn() => ObserversRespawn();
 
-    [ClientRpc]
-    void RpcRespawn() => playerLifeController.Respawn();
+    [ObserversRpc]
+    void ObserversRespawn() => playerLifeController.Respawn();
 
     #endregion
 }

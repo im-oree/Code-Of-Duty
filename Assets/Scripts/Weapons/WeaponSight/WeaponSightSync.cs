@@ -1,4 +1,6 @@
-using Mirror;
+using FishNet;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
 using UnityEngine;
 
 /// <summary>
@@ -13,27 +15,41 @@ public class WeaponSightSync : NetworkBehaviour
     [Tooltip("How many times per second the owner uploads the sight target")]
     [SerializeField] private float sendRate = 20f;
 
-    [SyncVar(hook = nameof(OnPositionSynced))] Vector3 syncedTargetPosition;
-    [SyncVar(hook = nameof(OnRotationSynced))] Quaternion syncedTargetRotation;
+    readonly SyncVar<Vector3> syncedTargetPosition = new SyncVar<Vector3>();
+    readonly SyncVar<Quaternion> syncedTargetRotation = new SyncVar<Quaternion>(Quaternion.identity);
 
     float nextSendTime;
     Vector3 lastSentPosition;
     Quaternion lastSentRotation;
 
+    void Awake()
+    {
+        syncedTargetPosition.OnChange += OnPositionSynced;
+        syncedTargetRotation.OnChange += OnRotationSynced;
+    }
+
+    void OnDestroy()
+    {
+        syncedTargetPosition.OnChange -= OnPositionSynced;
+        syncedTargetRotation.OnChange -= OnRotationSynced;
+    }
+
     public override void OnStartClient()
     {
-        if (!isOwned)
+        base.OnStartClient();
+
+        if (!IsOwner)
         {
             weaponSightPositionGetter.execute = false;
 
-            transformToTargetRig.SetPositionTarget(syncedTargetPosition);
-            transformToTargetRig.SetRotationTarget(syncedTargetRotation);
+            transformToTargetRig.SetPositionTarget(syncedTargetPosition.Value);
+            transformToTargetRig.SetRotationTarget(syncedTargetRotation.Value);
         }
     }
 
     void Update()
     {
-        if (!isOwned || !NetworkClient.active) return;
+        if (!IsOwner || !InstanceFinder.IsClientStarted) return;
         if (Time.time < nextSendTime) return;
 
         Vector3 position = transformToTargetRig.targetPosition;
@@ -45,24 +61,24 @@ public class WeaponSightSync : NetworkBehaviour
             lastSentPosition = position;
             lastSentRotation = rotation;
 
-            CmdSyncSightTarget(position, rotation);
+            ServerSyncSightTarget(position, rotation);
         }
     }
 
-    [Command]
-    void CmdSyncSightTarget(Vector3 position, Quaternion rotation)
+    [ServerRpc]
+    void ServerSyncSightTarget(Vector3 position, Quaternion rotation)
     {
-        syncedTargetPosition = position;
-        syncedTargetRotation = rotation;
+        syncedTargetPosition.Value = position;
+        syncedTargetRotation.Value = rotation;
     }
 
-    void OnPositionSynced(Vector3 _, Vector3 value)
+    void OnPositionSynced(Vector3 _, Vector3 value, bool asServer)
     {
-        if (!isOwned) transformToTargetRig.SetPositionTarget(value);
+        if (!asServer && !IsOwner) transformToTargetRig.SetPositionTarget(value);
     }
 
-    void OnRotationSynced(Quaternion _, Quaternion value)
+    void OnRotationSynced(Quaternion _, Quaternion value, bool asServer)
     {
-        if (!isOwned) transformToTargetRig.SetRotationTarget(value);
+        if (!asServer && !IsOwner) transformToTargetRig.SetRotationTarget(value);
     }
 }

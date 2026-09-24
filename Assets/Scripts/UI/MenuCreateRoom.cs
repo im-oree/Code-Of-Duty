@@ -1,4 +1,3 @@
-using Mirror;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -30,7 +29,7 @@ public class MenuCreateRoom : MonoBehaviour
             return;
         }
 
-        if (NetworkServer.active || NetworkClient.active) return;
+        if (CODNetworkManager.SessionActive) return;
 
         if (!int.TryParse(maxPlayersInputField.text, out int maxPlayers) || maxPlayers < 1)
         {

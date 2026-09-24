@@ -1,9 +1,9 @@
-using Mirror;
+using FishNet.Object;
 using UnityEngine;
 
 public class BulletNetwork : BulletBehaviour
 {
-    private NetworkIdentity shooterIdentity;
+    private NetworkObject shooterNetworkObject;
     private NetCMDs shooterCmds;
     private string weaponName;
     private float PlayerDamage;
@@ -27,7 +27,7 @@ public class BulletNetwork : BulletBehaviour
     {
         var weap = bulletCreator.GetComponent<Weapon>();
 
-        shooterIdentity = bulletCreator.root.GetComponent<NetworkIdentity>();
+        shooterNetworkObject = bulletCreator.root.GetComponent<NetworkObject>();
         shooterCmds = bulletCreator.root.GetComponent<NetCMDs>();
         PlayerDamage = weap.playerDamage;
         force = weap.bulletForce;
@@ -59,18 +59,18 @@ public class BulletNetwork : BulletBehaviour
             }
 
             // only the shooting client reports the hit; damage is applied by the server
-            if (shooterIdentity != null && shooterIdentity.isOwned && shooterCmds != null)
+            if (shooterNetworkObject != null && shooterNetworkObject.IsOwner && shooterCmds != null)
             {
                 if (hit.collider.CompareTag("HitBox") && hit.transform.root.CompareTag("Player"))
                 {
-                    var victimIdentity = hit.transform.root.GetComponent<NetworkIdentity>();
+                    var victimNetworkObject = hit.transform.root.GetComponent<NetworkObject>();
 
-                    if (victimIdentity != null)
+                    if (victimNetworkObject != null)
                     {
                         bool hitOnTheHead = hit.collider.name == "Head";
                         float damage = PlayerDamage * (hitOnTheHead ? 3f : 1f);
 
-                        shooterCmds.CmdDealDamage(victimIdentity, damage, hitOnTheHead, weaponName);
+                        shooterCmds.ServerDealDamage(victimNetworkObject, damage, hitOnTheHead, weaponName);
                     }
                 }
             }

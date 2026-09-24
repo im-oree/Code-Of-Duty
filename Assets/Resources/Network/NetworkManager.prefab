@@ -9,6 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 7020000000000000002}
+  - component: {fileID: 7020000000000000006}
   - component: {fileID: 7020000000000000003}
   - component: {fileID: 7020000000000000004}
   - component: {fileID: 7020000000000000005}
@@ -34,6 +35,24 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7020000000000000006
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7020000000000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d2c95dfde7d73b54dbbdc23155d35d36, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _refreshDefaultPrefabs: 0
+  _runInBackground: 1
+  _dontDestroyOnLoad: 1
+  _objectPool: {fileID: 0}
+  _persistence: 0
+  _spawnablePrefabs: {fileID: 11400000, guid: a2fd59764aa7162b3f12753bb1445c66, type: 2}
 --- !u!114 &7020000000000000003
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -43,42 +62,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 7020000000000000001}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6b0fecffa3f624585964b0d0eb21b18e, type: 3}
+  m_Script: {fileID: 11500000, guid: 6f48f002b825cbd45a19bd96d90f9edb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  port: 7777
-  DualMode: 1
-  NoDelay: 1
-  Interval: 10
-  Timeout: 10000
-  RecvBufferSize: 7361536
-  SendBufferSize: 7361536
-  FastResend: 2
-  ReceiveWindowSize: 4096
-  SendWindowSize: 4096
-  MaxRetransmit: 40
-  MaximizeSocketBuffers: 1
---- !u!114 &7020000000000000005
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7020000000000000001}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 10fa5f99fc5cbd6dec501d1c3dc74b1a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  enableActiveDiscovery: 1
-  BroadcastAddress: 
-  serverBroadcastListenPort: 47777
-  ActiveDiscoveryInterval: 3
-  transport: {fileID: 7020000000000000003}
-  OnServerFound:
-    m_PersistentCalls:
-      m_Calls: []
-  secretHandshake: 5203790291482143675
 --- !u!114 &7020000000000000004
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -91,29 +77,29 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a26924dc324dff262378cc80536281e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  dontDestroyOnLoad: 1
-  runInBackground: 1
-  headlessStartMode: 1
-  editorAutoStart: 0
-  sendRate: 60
-  offlineScene: StartMenu
-  onlineScene: 
-  offlineSceneLoadDelay: 0
-  transport: {fileID: 7020000000000000003}
-  networkAddress: localhost
-  maxConnections: 16
-  disconnectInactiveConnections: 0
-  disconnectInactiveTimeout: 60
-  authenticator: {fileID: 0}
-  playerPrefab: {fileID: 7010000000000000001, guid: 8c8bfe1af22be664c98db486e6d3d3d9, type: 3}
-  autoCreatePlayer: 1
-  playerSpawnMethod: 1
-  spawnPrefabs:
-  - {fileID: 8563434047993994485, guid: 69f9bc67f07a3b2419c3d647c966143e, type: 3}
-  exceptionsDisconnect: 1
-  timeInterpolationGui: 0
-  gamePlayerPrefab: {fileID: 8563434047993994485, guid: 69f9bc67f07a3b2419c3d647c966143e, type: 3}
+  gamePlayerPrefab: {fileID: 3714865847120627326, guid: 69f9bc67f07a3b2419c3d647c966143e, type: 3}
+  lobbyPlayerPrefab: {fileID: 7010000000000000003, guid: 8c8bfe1af22be664c98db486e6d3d3d9, type: 3}
   gameplayScene: DMArena1
+  menuScene: StartMenu
   discovery: {fileID: 7020000000000000005}
   serverName: LAN Game
+  port: 7777
+  maxConnections: 16
   advertiseOnLan: 1
+--- !u!114 &7020000000000000005
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7020000000000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 10fa5f99fc5cbd6dec501d1c3dc74b1a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  discoveryPort: 47777
+  activeDiscoveryInterval: 3
+  OnServerFound:
+    m_PersistentCalls:
+      m_Calls: []

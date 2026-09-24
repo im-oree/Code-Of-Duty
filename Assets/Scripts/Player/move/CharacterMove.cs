@@ -123,6 +123,26 @@ public class CharacterMove : MonoBehaviour
         currentState.Tick();
     }
 
+    /// <summary>
+    /// True when there is room above to stand up from crouch.
+    /// Ignores the player's own colliders (hitboxes, controller) and triggers,
+    /// which is what made the old check always fail with "Can't get up".
+    /// </summary>
+    public bool CanStandUp()
+    {
+        float radius = Mathf.Max(0.05f, characterController.radius * 0.9f);
+        Vector3 origin = transform.position + Vector3.up * (radius + characterController.skinWidth + 0.02f);
+        float distance = Mathf.Max(0.01f, normalColliderHeight - radius * 2f - characterController.skinWidth);
+
+        foreach (RaycastHit hit in Physics.SphereCastAll(origin, radius, Vector3.up, distance, groundCheckMask, QueryTriggerInteraction.Ignore))
+        {
+            if (hit.transform.root == transform.root) continue; // our own body
+            return false;
+        }
+
+        return true;
+    }
+
     void GroundCheck()
     {
         RaycastHit hitInfo;

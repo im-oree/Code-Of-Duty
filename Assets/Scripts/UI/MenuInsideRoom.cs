@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Mirror;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -56,14 +55,14 @@ public class MenuInsideRoom : MonoBehaviour
             GameObject playerItemObject = Instantiate(PlayerUIItemPrefab);
             playerItemObject.transform.SetParent(PlayerListContent.transform);
             playerItemObject.transform.localScale = Vector3.one;
-            playerItemObject.transform.GetChild(0).GetComponent<TMP_Text>().text = lobbyPlayer.playerName;
-            playerItemObject.GetComponent<Image>().color = lobbyPlayer.isLocalPlayer ? myItemColor : defaultColor;
+            playerItemObject.transform.GetChild(0).GetComponent<TMP_Text>().text = lobbyPlayer.playerName.Value;
+            playerItemObject.GetComponent<Image>().color = lobbyPlayer.IsOwner ? myItemColor : defaultColor;
 
             playerListGameobjects.Add(playerItemObject);
         }
 
         // only the host can start the match
-        StartGameButton.SetActive(NetworkServer.active);
+        StartGameButton.SetActive(CODNetworkManager.ServerActive);
     }
 
     public void OnDisconnectClicked()
@@ -79,7 +78,7 @@ public class MenuInsideRoom : MonoBehaviour
 
     public void OnStartGameClicked()
     {
-        if (NetworkServer.active)
+        if (CODNetworkManager.ServerActive)
         {
             CODNetworkManager.Instance.BeginGame();
         }

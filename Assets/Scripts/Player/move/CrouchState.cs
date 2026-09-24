@@ -19,9 +19,8 @@ public class CrouchState : MoveStateBase
 
         if (Input.GetKeyDown(KeyCode.C))
         {
-            if (Physics.SphereCast(characterMove.transform.position, characterMove.characterController.radius, Vector3.up, out RaycastHit hit2, characterMove.normalColliderHeight - characterMove.characterController.radius + characterMove.characterController.skinWidth, characterMove.groundCheckMask))
+            if (!characterMove.CanStandUp())
             {
-                Debug.Log("Can't get up");
                 return;
             }
             else

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
-using Mirror;
+using FishNet;
+using FishNet.Object;
 using UnityEngine;
 
 /// <summary>
@@ -14,7 +15,9 @@ public class NetComponentEnabler : NetworkBehaviour
 
     public override void OnStartClient()
     {
-        if (!isOwned)
+        base.OnStartClient();
+
+        if (!IsOwner)
         {
             ComponentsDisaber();
         }
@@ -22,8 +25,10 @@ public class NetComponentEnabler : NetworkBehaviour
 
     public override void OnStartServer()
     {
+        base.OnStartServer();
+
         // dedicated server: nothing is local, disable everything local-only
-        if (!NetworkClient.active)
+        if (!InstanceFinder.IsClientStarted)
         {
             ComponentsDisaber();
         }

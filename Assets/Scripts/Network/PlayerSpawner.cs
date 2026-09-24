@@ -1,4 +1,3 @@
-using Mirror;
 using UnityEngine;
 
 /// <summary>
@@ -17,7 +16,7 @@ public class PlayerSpawner : MonoBehaviour
         CODNetworkManager manager = CODNetworkManager.EnsureExists();
 
         // opened directly without a session: start the internal server, like a real game
-        if (manager != null && !NetworkClient.active && !NetworkServer.active)
+        if (manager != null && !CODNetworkManager.SessionActive)
         {
             manager.StartInternalHost();
         }

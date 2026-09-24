@@ -1,4 +1,4 @@
-using Mirror;
+using FishNet.Object;
 using UnityEngine;
 
 public class PlayerHealth : MonoBehaviour
@@ -7,14 +7,14 @@ public class PlayerHealth : MonoBehaviour
     [SerializeField] private PlayerLifeController playerLifeController;
     [SerializeField] private HitBoxColidersList hitBoxColidersList;
 
-    NetworkIdentity rootIdentity;
+    NetworkObject rootNetworkObject;
 
-    // no identity (offline test scenes) counts as the local player
-    bool IsLocalPlayer => rootIdentity == null || rootIdentity.isOwned;
+    // no network object (offline test scenes) counts as the local player
+    bool IsLocalPlayer => rootNetworkObject == null || rootNetworkObject.IsOwner;
 
     void Awake()
     {
-        rootIdentity = transform.root.GetComponent<NetworkIdentity>();
+        rootNetworkObject = transform.root.GetComponent<NetworkObject>();
     }
 
     void Start()

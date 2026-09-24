@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using Mirror;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
 using UnityEngine;
 
 /// <summary>
@@ -19,45 +20,53 @@ public class CODLobbyPlayer : NetworkBehaviour
     /// <summary>Raised on the local client when its own lobby player spawns (we're in the room).</summary>
     public static event Action LocalPlayerJoined;
 
-    [SyncVar(hook = nameof(OnNameChanged))]
-    public string playerName = "Player";
+    public readonly SyncVar<string> playerName = new SyncVar<string>("Player");
+
+    void Awake()
+    {
+        playerName.OnChange += OnNameChanged;
+    }
 
     public override void OnStartServer()
     {
+        base.OnStartServer();
         // lobby players survive the scene change until they are replaced
         DontDestroyOnLoad(gameObject);
     }
 
     public override void OnStartClient()
     {
+        base.OnStartClient();
         DontDestroyOnLoad(gameObject);
 
         if (!All.Contains(this)) All.Add(this);
         LobbyChanged?.Invoke();
+
+        if (IsOwner)
+        {
+            ServerSetPlayerName(CODNetworkManager.PlayerName);
+            LocalPlayerJoined?.Invoke();
+        }
     }
 
     public override void OnStopClient()
     {
+        base.OnStopClient();
         if (All.Remove(this)) LobbyChanged?.Invoke();
-    }
-
-    public override void OnStartLocalPlayer()
-    {
-        CmdSetPlayerName(CODNetworkManager.PlayerName);
-        LocalPlayerJoined?.Invoke();
     }
 
     void OnDestroy()
     {
+        playerName.OnChange -= OnNameChanged;
         if (All.Remove(this)) LobbyChanged?.Invoke();
     }
 
-    [Command]
-    void CmdSetPlayerName(string newName)
+    [ServerRpc]
+    void ServerSetPlayerName(string newName)
     {
         if (!string.IsNullOrWhiteSpace(newName))
-            playerName = newName.Trim();
+            playerName.Value = newName.Trim();
     }
 
-    void OnNameChanged(string _, string __) => LobbyChanged?.Invoke();
+    void OnNameChanged(string _, string __, bool asServer) => LobbyChanged?.Invoke();
 }

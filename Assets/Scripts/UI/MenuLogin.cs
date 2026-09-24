@@ -35,7 +35,7 @@ public class MenuLogin : MonoBehaviour
 
         CODNetworkManager.PlayerName = playerNameField.text;
 
-        // make sure the network core exists; no master server needed with Mirror LAN
+        // make sure the network core exists; no master server needed with LAN play
         CODNetworkManager.EnsureExists();
 
         Debug.Log(CODNetworkManager.PlayerName + " logged in");

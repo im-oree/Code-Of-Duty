@@ -1,4 +1,3 @@
-using Mirror;
 using TMPro;
 using UnityEngine;
 
@@ -28,7 +27,7 @@ public class MenuQuickGame : MonoBehaviour
         discovery = manager != null ? manager.discovery : null;
 
         if (discovery == null || searching) return;
-        if (NetworkServer.active || NetworkClient.active) return;
+        if (CODNetworkManager.SessionActive) return;
 
         searching = true;
         discovery.OnServerFound.AddListener(OnServerDiscovered);
@@ -40,7 +39,7 @@ public class MenuQuickGame : MonoBehaviour
         if (!searching) return;
 
         StopSearch();
-        CODNetworkManager.Instance.JoinGame(info.uri);
+        CODNetworkManager.Instance.JoinGame(info.address);
     }
 
     void StopSearch()
@@ -61,7 +60,7 @@ public class MenuQuickGame : MonoBehaviour
     {
         StopSearch();
 
-        if (discovery != null && !NetworkServer.active && !NetworkClient.active)
+        if (discovery != null && !CODNetworkManager.SessionActive)
         {
             discovery.StopDiscovery();
         }

@@ -1,6 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
-using Mirror;
+using FishNet.Object;
 using UnityEngine;
 
 public class PlayerLifeController : MonoBehaviour
@@ -15,15 +15,15 @@ public class PlayerLifeController : MonoBehaviour
     public List<MonoBehaviour> disableMonoBehComponentsOnDeath = new List<MonoBehaviour>();
     public List<GameObject> disableGameObjectsOnDeath = new List<GameObject>();
 
-    NetworkIdentity rootIdentity;
+    NetworkObject rootNetworkObject;
     NetCMDs netCmds;
 
-    // no identity (offline test scenes) counts as the local player
-    bool IsLocalPlayer => rootIdentity == null || rootIdentity.isOwned;
+    // no network object (offline test scenes) counts as the local player
+    bool IsLocalPlayer => rootNetworkObject == null || rootNetworkObject.IsOwner;
 
     void Awake()
     {
-        rootIdentity = transform.root.GetComponent<NetworkIdentity>();
+        rootNetworkObject = transform.root.GetComponent<NetworkObject>();
         netCmds = transform.root.GetComponent<NetCMDs>();
     }
 
@@ -117,9 +117,9 @@ public class PlayerLifeController : MonoBehaviour
         {
             Destroy(networkBehaviour);
         }
-        foreach (var identity in playerGO.GetComponentsInChildren<NetworkIdentity>(true))
+        foreach (var networkObject in playerGO.GetComponentsInChildren<NetworkObject>(true))
         {
-            Destroy(identity);
+            Destroy(networkObject);
         }
 
         Destroy(playerGO.GetComponent<Animator>());
