@@ -25,7 +25,7 @@ public class WeaponController : MonoBehaviour
 
     [Header("COD-style handling")]
     [Tooltip("Guns not in hand are invisible (pulled 'from below' on switch) instead of showing on the body.")]
-    public bool hideHolsteredGuns = true;
+    public bool hideHolsteredGuns = false; // COD style: guns stay visible on back/hip mounts
     [Tooltip("Cross-fade time into the weapon-switch animation. Lower = snappier COD-style swaps.")]
     public float switchBlendTime = 0.09f;
 
@@ -176,7 +176,7 @@ public class WeaponController : MonoBehaviour
 
     void LateUpdate()
     {
-        if (!hideHolsteredGuns || slots == null) return;
+        if (slots == null) return;
 
         for (int i = 0; i < slots.Length; i++)
         {
@@ -187,7 +187,10 @@ public class WeaponController : MonoBehaviour
             if (weapon == null) continue;
 
             int id = i + 1;
-            bool visible = !MeleeMode && (id == activeID || (changed && id == nextID));
+            // visible always (holstered guns rest on their inactiveSlot mounts);
+            // legacy hide mode kept behind the flag
+            bool visible = !hideHolsteredGuns
+                || (!MeleeMode && (id == activeID || (changed && id == nextID)));
             if (weapon.gameObject.activeSelf != visible)
                 weapon.gameObject.SetActive(visible);
         }
