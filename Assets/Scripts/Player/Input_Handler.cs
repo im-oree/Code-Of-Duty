@@ -31,6 +31,13 @@ public class Input_Handler : MonoBehaviour
             return;
         }
 
+        // local player HUD (live ownership check — never trust Start-time ownership)
+        if (!hudAttached && NetOwnership.IsLocal(this))
+        {
+            AmmoHUD.Attach(weaponController);
+            hudAttached = true;
+        }
+
         TryShoot();
 
         bodySlope_Handler.setInput(-Input.GetAxisRaw("Slope"));
@@ -49,6 +56,12 @@ public class Input_Handler : MonoBehaviour
         if (InputBindings.Down("interact") && weaponPickUp != null)
         {
             weaponPickUp.PickupCheck();
+        }
+
+        if (InputBindings.Down("reload") && !weaponController.MeleeMode)
+        {
+            var current = weaponController.GETCurrentWeapon;
+            if (current != null) current.StartReload();
         }
 
         if (InputBindings.Down("aim"))
@@ -73,6 +86,7 @@ public class Input_Handler : MonoBehaviour
 
 
     WeaponMovementPose movementPose;
+    bool hudAttached;
 
     void TryShoot()
     {
