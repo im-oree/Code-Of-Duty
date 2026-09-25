@@ -896,7 +896,7 @@ MonoBehaviour:
   collisionDetectionLength: 0.565
   maxZPositionOffsetCollision: 0.05
   recoilParametersModel:
-    recoilForce: 5
+    recoilForce: 3.8
     cameraRecoilAxes:
     - canBeNegative: 0
       randomValue: 1

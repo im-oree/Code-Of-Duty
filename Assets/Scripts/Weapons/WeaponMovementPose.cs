@@ -22,8 +22,12 @@ public class WeaponMovementPose : MonoBehaviour
     public CharacterMove characterMove;
 
     [Header("Sprint pose (two-handed jog, gun stays in frame)")]
-    public Vector3 sprintPositionOffset = new Vector3(-0.015f, 0.05f, -0.03f);
-    public Vector3 sprintEulerOffset = new Vector3(-12f, 6f, 10f);
+    public Vector3 sprintPositionOffset = new Vector3(-0.02f, 0.09f, -0.05f);
+    public Vector3 sprintEulerOffset = new Vector3(-18f, 8f, 12f);
+
+    [Header("Rules")]
+    [Tooltip("Allow firing while sprinting (COD default: no — firing breaks the sprint).")]
+    public bool canShootWhileSprinting = false;
 
     [Header("Tac-sprint pose (one-handed, muzzle up)")]
     public Vector3 tacPositionOffset = new Vector3(-0.035f, 0.11f, -0.06f);
@@ -48,23 +52,26 @@ public class WeaponMovementPose : MonoBehaviour
     float tacEndTime;
     float preTacLeftHandWeight = 1f;
     bool leftHandOverridden;
-    bool isLocal;
+    FishNet.Object.NetworkObject netObject;
     WeaponSlotRig lastPosedSlot;
+
+    /// <summary>True while the player is sprint/tac-sprint moving (used to block firing).</summary>
+    public bool IsSprinting => sprintBlend > 0.35f || tacBlend > 0.35f;
 
     void Awake()
     {
         if (weaponController == null) weaponController = GetComponent<WeaponController>();
         if (characterMove == null) characterMove = GetComponentInParent<CharacterMove>();
+        netObject = GetComponentInParent<FishNet.Object.NetworkObject>();
     }
 
-    void Start()
-    {
-        isLocal = NetOwnership.IsLocal(this);
-    }
+    // NOTE: ownership must be checked LIVE — FishNet assigns it after Start(),
+    // so caching a bool there would leave this system dead forever.
+    bool IsLocal => netObject == null || netObject.IsOwner;
 
     void Update()
     {
-        if (!isLocal || weaponController == null || characterMove == null) return;
+        if (!IsLocal || weaponController == null || characterMove == null) return;
 
         // ---------------- state detection ----------------
         bool movingForward = Input.GetAxisRaw("Vertical") > 0.1f;

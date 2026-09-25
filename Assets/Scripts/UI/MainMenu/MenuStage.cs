@@ -30,7 +30,7 @@ public class MenuStage : MonoBehaviour
 
         // the star of the show — yaw ~-18 so he faces the camera (camera looks
         // down -Z; the player model's forward is +Z at identity)
-        operatorDisplay = OperatorDisplay.Create(transform, new Vector3(0.55f, 0f, 0f), Quaternion.Euler(0f, -18f, 0f));
+        operatorDisplay = OperatorDisplay.Create(transform, new Vector3(-0.6f, 0f, 0f), Quaternion.Euler(0f, -14f, 0f));
     }
 
     void SetupCamera()
@@ -113,11 +113,11 @@ public class MenuStage : MonoBehaviour
             new Color(0.09f, 0.095f, 0.11f), 0.3f, 0.45f);
 
         // low platform the operator stands on
-        CreateBlock("Platform", new Vector3(0.55f, -0.035f, 0f), new Vector3(2.4f, 0.08f, 2.4f),
+        CreateBlock("Platform", new Vector3(-0.6f, -0.035f, 0f), new Vector3(2.4f, 0.08f, 2.4f),
             new Color(0.10f, 0.105f, 0.12f), 0.45f, 0.6f);
 
         // thin accent edge on the platform
-        CreateBlock("PlatformEdge", new Vector3(0.55f, 0.006f, 1.21f), new Vector3(2.42f, 0.025f, 0.05f),
+        CreateBlock("PlatformEdge", new Vector3(-0.6f, 0.006f, 1.21f), new Vector3(2.42f, 0.025f, 0.05f),
             new Color(1f, 0.54f, 0f), 0.2f, 0.7f, emissive: new Color(1f, 0.45f, 0.05f) * 1.6f);
     }
 
@@ -129,7 +129,9 @@ public class MenuStage : MonoBehaviour
         block.transform.SetParent(transform, false);
         block.transform.position = pos;
         block.transform.localScale = scale;
-        Object.Destroy(block.GetComponent<Collider>());
+        var blockCollider = block.GetComponent<Collider>();
+        if (Application.isPlaying) Object.Destroy(blockCollider);
+        else Object.DestroyImmediate(blockCollider);
 
         var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
         mat.SetColor("_BaseColor", color);

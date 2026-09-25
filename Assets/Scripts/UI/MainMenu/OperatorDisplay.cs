@@ -72,29 +72,43 @@ public class OperatorDisplay : MonoBehaviour
     void GroundModel()
     {
         if (model == null) return;
-        var renderers = model.GetComponentsInChildren<Renderer>(false);
-        if (renderers.Length == 0) return;
+
+        // pose the skeleton first so bounds are real, not bind-pose garbage
+        if (animator != null) animator.Update(0f);
 
         float minY = float.MaxValue;
-        foreach (var r in renderers)
+
+        // prefer foot bones (exact), fall back to renderer bounds
+        if (animator != null && animator.isHuman)
         {
-            if (r is ParticleSystemRenderer) continue;
-            minY = Mathf.Min(minY, r.bounds.min.y);
+            Transform lf = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+            Transform rf = animator.GetBoneTransform(HumanBodyBones.RightFoot);
+            if (lf != null) minY = Mathf.Min(minY, lf.position.y - 0.08f);
+            if (rf != null) minY = Mathf.Min(minY, rf.position.y - 0.08f);
+        }
+
+        if (minY == float.MaxValue)
+        {
+            foreach (var r in model.GetComponentsInChildren<Renderer>(false))
+            {
+                if (r is ParticleSystemRenderer) continue;
+                minY = Mathf.Min(minY, r.bounds.min.y);
+            }
         }
         if (minY == float.MaxValue) return;
 
+        // sanity-clamped shift: never teleport the model around
+        float shift = Mathf.Clamp(minY - transform.position.y, -1f, 1f);
         Vector3 p = model.transform.position;
-        p.y -= minY - transform.position.y;
+        p.y -= shift;
         model.transform.position = p;
         groundedLocalY = model.transform.localPosition.y;
     }
 
     static GameObject ResolvePlayerPrefab()
     {
-        CODNetworkManager manager = CODNetworkManager.EnsureExists();
-        if (manager != null && manager.gamePlayerPrefab != null)
-            return manager.gamePlayerPrefab.gameObject;
-        return null;
+        // edit-mode safe: reads the prefab asset, never spawns the manager
+        return CODNetworkManager.PlayerPrefabAsset;
     }
 
     /// <summary>Removes every gameplay, physics and networking piece; keeps visuals + animator.</summary>
@@ -149,6 +163,10 @@ public class OperatorDisplay : MonoBehaviour
     public void RefreshWeapon()
     {
         if (model == null) return;
+
+        // FIRST: hide every baked slot gun, no matter what happens below.
+        // (previously an early-return could leave a stray gun lying visible)
+        HideHolsteredDuplicate("");
 
         // selected primary = first id in the saved loadout (fallback: first rifle in DB)
         string primaryId = null;

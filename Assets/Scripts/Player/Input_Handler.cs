@@ -64,6 +64,8 @@ public class Input_Handler : MonoBehaviour
     }
 
 
+    WeaponMovementPose movementPose;
+
     void TryShoot()
     {
         if (weaponController.MeleeMode)
@@ -71,6 +73,11 @@ public class Input_Handler : MonoBehaviour
             if (Input.GetMouseButtonDown(0)) TryMelee();
             return;
         }
+
+        // COD rule: no firing mid-sprint (configurable)
+        if (movementPose == null) movementPose = weaponController.GetComponent<WeaponMovementPose>();
+        if (movementPose != null && movementPose.IsSprinting && !movementPose.canShootWhileSprinting)
+            return;
 
         Weapon current = weaponController.GETCurrentWeapon;
         if (current == null) return;

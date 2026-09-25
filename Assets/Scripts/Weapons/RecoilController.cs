@@ -74,7 +74,7 @@ public class RecoilController : MonoBehaviour
             {
                 switch (weapon.slotType)
                 {
-                    case Weapon.SlotType.rifle: strength = weapon.singleShoot ? 0.95f : 0.55f; break;
+                    case Weapon.SlotType.rifle: strength = weapon.singleShoot ? 0.95f : 0.42f; break;
                     case Weapon.SlotType.smg: strength = 0.35f; break;
                     case Weapon.SlotType.pistol: strength = 0.5f; break;
                 }

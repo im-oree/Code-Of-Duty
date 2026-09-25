@@ -12,9 +12,70 @@ using UnityEngine.UI;
 /// realtime switching, loadout screen, placeholder tabs for future features.
 /// No scene surgery: it injects itself whenever the StartMenu scene loads.
 /// </summary>
+[ExecuteAlways]
 public class CODMainMenu : MonoBehaviour
 {
     const string MenuSceneName = "StartMenu";
+
+    /// <summary>Root all UI is built under (child object, so editor previews can be swapped cleanly).</summary>
+    Transform uiRoot;
+
+    static bool IsEditMode => !Application.isPlaying;
+
+    #region Editor preview — the menu is visible in the editor AT ALL TIMES.
+    // The preview is rebuilt from the CURRENT code every time the scene opens
+    // or scripts recompile (objects are DontSave), so code changes always
+    // reflect — and Play mode rebuilds it again fresh with live wiring.
+
+    void OnEnable()
+    {
+        if (IsEditMode) BuildEditorPreview();
+    }
+
+    void OnDisable()
+    {
+        if (IsEditMode) DestroyPreview();
+    }
+
+    void BuildEditorPreview()
+    {
+        DestroyPreview();
+        BuildCanvas();
+        BuildTopBar();
+        BuildTabs();
+        SelectTab("PLAY");
+        stage = MenuStage.Create();
+
+        MarkDontSave(uiRoot != null ? uiRoot.gameObject : null);
+        MarkDontSave(stage != null ? stage.gameObject : null);
+    }
+
+    void DestroyPreview()
+    {
+        // stale preview roots from an earlier build/recompile
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            var child = transform.GetChild(i);
+            if (child.name == "MenuUI") DestroyImmediate(child.gameObject);
+        }
+        var staleStage = GameObject.Find("MenuStage");
+        if (staleStage != null && (staleStage.hideFlags & HideFlags.DontSave) != 0)
+            DestroyImmediate(staleStage);
+
+        tabButtons.Clear();
+        tabPanels.Clear();
+        operatorCards.Clear();
+        loadoutCards.Clear();
+    }
+
+    static void MarkDontSave(GameObject root)
+    {
+        if (root == null) return;
+        foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            t.gameObject.hideFlags = HideFlags.DontSave;
+    }
+
+    #endregion
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
@@ -66,6 +127,9 @@ public class CODMainMenu : MonoBehaviour
 
     void Start()
     {
+        if (IsEditMode) return;
+
+        DestroyPreview(); // clear any editor preview that survived into play
         HideLegacyMenu();
         stage = MenuStage.Create();
 
@@ -106,21 +170,25 @@ public class CODMainMenu : MonoBehaviour
 
     void BuildCanvas()
     {
-        canvas = gameObject.AddComponent<Canvas>();
+        var root = new GameObject("MenuUI");
+        root.transform.SetParent(transform, false);
+        uiRoot = root.transform;
+
+        canvas = root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 50;
-        var scaler = gameObject.AddComponent<CanvasScaler>();
+        var scaler = root.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.matchWidthOrHeight = 0.5f;
-        gameObject.AddComponent<GraphicRaycaster>();
+        root.AddComponent<GraphicRaycaster>();
     }
 
     void BuildTopBar()
     {
         // full-width strip behind the tab bar (stretch-anchored so children
         // measure from the real screen edge on every resolution)
-        var bar = UITheme.Image("TopBar", transform, new Color(0f, 0f, 0f, 0.55f));
+        var bar = UITheme.Image("TopBar", uiRoot, new Color(0f, 0f, 0f, 0.55f));
         var barRect = bar.rectTransform;
         barRect.anchorMin = new Vector2(0f, 1f);
         barRect.anchorMax = new Vector2(1f, 1f);
@@ -173,7 +241,7 @@ public class CODMainMenu : MonoBehaviour
         });
 
         // bottom bar: version + quit (full-width, stretch-anchored)
-        var bottom = UITheme.Image("BottomBar", transform, new Color(0f, 0f, 0f, 0.45f));
+        var bottom = UITheme.Image("BottomBar", uiRoot, new Color(0f, 0f, 0f, 0.45f));
         var bottomRect = bottom.rectTransform;
         bottomRect.anchorMin = new Vector2(0f, 0f);
         bottomRect.anchorMax = new Vector2(1f, 0f);
@@ -204,7 +272,16 @@ public class CODMainMenu : MonoBehaviour
         {
             if (pair.Value.gameObject.activeSelf != (pair.Key == id))
                 pair.Value.gameObject.SetActive(pair.Key == id);
-            if (pair.Key == id) StartCoroutine(FadeIn(pair.Value));
+            if (pair.Key == id)
+            {
+                if (Application.isPlaying) StartCoroutine(FadeIn(pair.Value));
+                else
+                {
+                    var g = pair.Value.GetComponent<CanvasGroup>();
+                    if (g != null) g.alpha = 1f;
+                    pair.Value.anchoredPosition = Vector2.zero;
+                }
+            }
         }
     }
 
@@ -228,7 +305,7 @@ public class CODMainMenu : MonoBehaviour
 
     RectTransform CreateTabPanel(string id)
     {
-        var panel = UITheme.Rect($"Panel_{id}", transform);
+        var panel = UITheme.Rect($"Panel_{id}", uiRoot);
         UITheme.Stretch(panel);
         panel.offsetMin = new Vector2(0, 46);
         panel.offsetMax = new Vector2(0, -86);
@@ -420,7 +497,7 @@ public class CODMainMenu : MonoBehaviour
 
     void BuildLobbyOverlay()
     {
-        var dim = UITheme.Image("LobbyOverlay", transform, new Color(0f, 0f, 0f, 0.72f));
+        var dim = UITheme.Image("LobbyOverlay", uiRoot, new Color(0f, 0f, 0f, 0.72f));
         UITheme.Stretch(dim.rectTransform);
         lobbyGroup = dim.gameObject.AddComponent<CanvasGroup>();
 
@@ -577,9 +654,9 @@ public class CODMainMenu : MonoBehaviour
         UITheme.TL(sub.rectTransform, 48, 78, 700, 22);
 
         var database = WeaponDatabase.Instance;
-        var manager = CODNetworkManager.EnsureExists();
-        WeaponController controller = manager != null && manager.gamePlayerPrefab != null
-            ? manager.gamePlayerPrefab.GetComponentInChildren<WeaponController>(true)
+        GameObject playerPrefab = CODNetworkManager.PlayerPrefabAsset;
+        WeaponController controller = playerPrefab != null
+            ? playerPrefab.GetComponentInChildren<WeaponController>(true)
             : null;
 
         if (database == null || controller == null || controller.slots == null) return;

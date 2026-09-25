@@ -73,6 +73,25 @@ public class CODNetworkManager : MonoBehaviour
     /// Returns the active manager, instantiating it from Resources when needed,
     /// so any scene can be started directly (menu or gameplay).
     /// </summary>
+    /// <summary>
+    /// Edit-mode-safe access to the game player prefab (menu previews).
+    /// Never instantiates the manager — reads the prefab asset directly.
+    /// </summary>
+    public static GameObject PlayerPrefabAsset
+    {
+        get
+        {
+            if (instance != null && instance.gamePlayerPrefab != null)
+                return instance.gamePlayerPrefab.gameObject;
+
+            var managerPrefab = Resources.Load<GameObject>("Network/NetworkManager");
+            var manager = managerPrefab != null ? managerPrefab.GetComponent<CODNetworkManager>() : null;
+            return manager != null && manager.gamePlayerPrefab != null
+                ? manager.gamePlayerPrefab.gameObject
+                : null;
+        }
+    }
+
     public static CODNetworkManager EnsureExists()
     {
         if (instance != null) return instance;

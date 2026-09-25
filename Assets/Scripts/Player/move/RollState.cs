@@ -4,7 +4,8 @@ using UnityEngine;
 
 public class RollState : MoveStateBase
 {
-    private float rollTime = 1.5f;
+    private float rollTime = 0.95f;          // snappier COD-style slide
+    private const float slideBoost = 1.4f;   // slides carry MORE speed than the sprint that started them
     private float currentTime = 0;
     private Vector3 startVelocity;
     public RollState(CharacterMove characterMove) : base(characterMove)
@@ -18,12 +19,17 @@ public class RollState : MoveStateBase
 
         if (currentTime < rollTime && characterMove.rollVelocity != Vector3.zero)
         {
-            characterMove.rollVelocity = Vector3.Lerp(startVelocity, Vector3.zero, currentTime / rollTime);
+            // ease-out: fast launch, smooth tail — never a hard stop
+            float k = currentTime / rollTime;
+            characterMove.rollVelocity = Vector3.Lerp(startVelocity, Vector3.zero, k * k);
             currentTime += Time.deltaTime;
         }
         else
         {
-            characterMove.SetState(characterMove.crouchState);
+            // pop straight back up like COD (only crouch if there is no headroom)
+            characterMove.SetState(characterMove.CanStandUp()
+                ? characterMove.standState
+                : characterMove.crouchState);
         }
     }
 
@@ -31,7 +37,7 @@ public class RollState : MoveStateBase
     {
         currentTime = 0;
         characterMove.animator.SetBool(characterMove.rollID, true);
-        characterMove.rollVelocity = characterMove.moveVelocity;
+        characterMove.rollVelocity = characterMove.moveVelocity * slideBoost;
         startVelocity = characterMove.rollVelocity;
         characterMove.moveVelocity = Vector3.zero;
         if (characterMove.rollVelocity == Vector3.zero)
