@@ -195,6 +195,14 @@ public class NetCMDs : NetworkBehaviour
             victim.ObserversApplyDamage(damage, NetworkObject, hitOnTheHead, weaponName);
     }
 
+    /// <summary>
+    /// Server-only entry for area damage (grenades/explosions) — unlike
+    /// ServerDealDamage this is NOT an RPC: the server already owns the event.
+    /// </summary>
+    [Server]
+    public void ServerApplyAreaDamage(float damage, NetworkObject attacker, string weaponName)
+        => ObserversApplyDamage(damage, attacker, false, weaponName);
+
     [ObserversRpc]
     void ObserversApplyDamage(float damage, NetworkObject killer, bool hitOnTheHead, string weaponName)
     {

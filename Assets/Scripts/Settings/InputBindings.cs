@@ -46,6 +46,7 @@ public static class InputBindings
         Register("weapon2", "Secondary Weapon", "Combat", KeyCode.Alpha2);
         Register("melee", "Melee Stance", "Combat", KeyCode.Alpha3);
         Register("reload", "Reload", "Combat", KeyCode.R);
+        Register("grenade", "Throw Grenade", "Combat", KeyCode.G);
 
         // GENERAL
         Register("interact", "Interact / Pickup", "General", KeyCode.F);

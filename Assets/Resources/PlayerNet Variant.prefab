@@ -761,6 +761,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 5217620020292305509, guid: 1711848c311a7e84a8d4e466405d6c0c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 8694968001494921660}
+    - targetCorrespondingSourceObject: {fileID: 5217620020292305509, guid: 1711848c311a7e84a8d4e466405d6c0c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 5544332211998877710}
     - targetCorrespondingSourceObject: {fileID: 4947727635779911240, guid: 1711848c311a7e84a8d4e466405d6c0c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1080387897}
@@ -1264,3 +1267,18 @@ MonoBehaviour:
   _interpolation: 2
   _clientAuthoritative: 1
   _sendToOwner: 0
+--- !u!114 &5544332211998877710
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8563434047993994485}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76c16607efc1b3fb1e5d26a811a7a31d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _componentIndexCache: 255
+  _addedNetworkObject: {fileID: 3714865847120627326}
+  _networkObjectCache: {fileID: 0}

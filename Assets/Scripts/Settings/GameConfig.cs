@@ -18,6 +18,14 @@ public class GameConfig : ScriptableObject
     [Tooltip("Full spare magazines a player carries per weapon (used when infinite ammo is OFF).")]
     public int reserveMagazines = 4;
 
+    [Header("Grenades")]
+    [Tooltip("Frag grenades carried per life (refilled on respawn).")]
+    public int grenadesPerLife = 2;
+    public float grenadeDamage = 115f;
+    public float grenadeRadius = 6.5f;
+    public float grenadeFuse = 3.5f;
+    public float grenadeThrowForce = 16f;
+
     [Header("Player")]
     public int maxHealth = 100;
     public float respawnDelay = 3.5f;

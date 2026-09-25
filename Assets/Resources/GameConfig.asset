@@ -14,5 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   infiniteAmmo: 1
   reserveMagazines: 4
+  grenadesPerLife: 2
+  grenadeDamage: 115
+  grenadeRadius: 6.5
+  grenadeFuse: 3.5
+  grenadeThrowForce: 16
   maxHealth: 100
   respawnDelay: 3.5

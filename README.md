@@ -101,6 +101,11 @@ Networking is the base of everything — all game logic flows through the server
 - **Ammo** — per-weapon `magazineSize`/`reloadTime`, reserve magazines from
   `Resources/GameConfig.asset` (infinite ammo currently ON), R to reload,
   auto-reload on empty, local AmmoHUD counter.
+- **Grenades** — separate layer on top of the 2-weapon loadout (default G):
+  owner requests, SERVER simulates the throw (clients follow NetworkTransform),
+  fuse + radius-falloff damage with kill credit, code-built explosion VFX and a
+  distance-based camera-shake effector on every client. Count/damage/radius/
+  fuse/force all in GameConfig; refills on respawn; infinite with infinite ammo.
 - **Main menu in the editor** — `CODMainMenu` is `[ExecuteAlways]`: the full
   menu + 3D stage render as a DontSave preview in edit mode (rebuilt from
   current code on every recompile) and are rebuilt live on Play.

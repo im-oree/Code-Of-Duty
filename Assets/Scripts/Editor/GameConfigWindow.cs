@@ -124,6 +124,13 @@ public class GameConfigWindow : EditorWindow
         EditorGUILayout.PropertyField(so.FindProperty("infiniteAmmo"));
         EditorGUILayout.PropertyField(so.FindProperty("reserveMagazines"));
         GUILayout.Space(6f);
+        EditorGUILayout.LabelField("Grenades", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(so.FindProperty("grenadesPerLife"));
+        EditorGUILayout.PropertyField(so.FindProperty("grenadeDamage"));
+        EditorGUILayout.PropertyField(so.FindProperty("grenadeRadius"));
+        EditorGUILayout.PropertyField(so.FindProperty("grenadeFuse"));
+        EditorGUILayout.PropertyField(so.FindProperty("grenadeThrowForce"));
+        GUILayout.Space(6f);
         EditorGUILayout.PropertyField(so.FindProperty("maxHealth"));
         EditorGUILayout.PropertyField(so.FindProperty("respawnDelay"));
         if (so.ApplyModifiedProperties())

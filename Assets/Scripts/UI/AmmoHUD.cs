@@ -16,6 +16,7 @@ public class AmmoHUD : MonoBehaviour
     TextMeshProUGUI magText;
     TextMeshProUGUI reserveText;
     TextMeshProUGUI stateText;
+    TextMeshProUGUI grenadeText;
 
     public static void Attach(WeaponController controller)
     {
@@ -57,6 +58,12 @@ public class AmmoHUD : MonoBehaviour
         UITheme.Place(stateText.rectTransform, new Vector2(1f, 0f), new Vector2(1f, 0f),
             new Vector2(-16f, 10f), new Vector2(200f, 18f));
         stateText.characterSpacing = 2;
+
+        grenadeText = UITheme.Text("Grenades", plate.transform, "", 15, UITheme.TextDim, FontStyles.Bold,
+            TextAlignmentOptions.Right);
+        UITheme.Place(grenadeText.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f),
+            new Vector2(-16f, 22f), new Vector2(200f, 20f));
+        grenadeText.characterSpacing = 1;
     }
 
     void Update()
@@ -83,5 +90,10 @@ public class AmmoHUD : MonoBehaviour
             : "/ " + (weapon.ReserveMags * weapon.magazineSize);
 
         stateText.text = weapon.Reloading ? "RELOADING..." : "";
+
+        var thrower = GrenadeThrower.Local;
+        grenadeText.text = thrower == null ? ""
+            : GameConfig.InfiniteAmmo ? "FRAG x \u221E"
+            : "FRAG x " + thrower.Remaining;
     }
 }
