@@ -205,7 +205,7 @@ public class CODMainMenu : MonoBehaviour
         UITheme.TL(accent.rectTransform, 48, 66, 258, 3);
 
         // tab buttons
-        string[] tabs = { "PLAY", "OPERATORS", "LOADOUT", "BARRACKS", "STORE" };
+        string[] tabs = { "PLAY", "OPERATORS", "LOADOUT", "BARRACKS", "STORE", "SETTINGS" };
         float x = 520;
         foreach (string tab in tabs)
         {
@@ -325,6 +325,25 @@ public class CODMainMenu : MonoBehaviour
         BuildLoadoutTab();
         BuildBarracksTab();
         BuildStoreTab();
+        BuildSettingsTab();
+    }
+
+    void BuildSettingsTab()
+    {
+        var panel = CreateTabPanel("SETTINGS");
+
+        var header = UITheme.Text("Header", panel, "SETTINGS", 30, UITheme.TextMain, FontStyles.Bold);
+        UITheme.TL(header.rectTransform, 48, 36, 600, 40);
+        header.characterSpacing = 3;
+
+        // reusable panel (same one the in-game pause menu embeds)
+        var host = UITheme.Image("SettingsHost", panel, UITheme.Panel);
+        host.rectTransform.anchorMin = new Vector2(0f, 0f);
+        host.rectTransform.anchorMax = new Vector2(0f, 1f);
+        host.rectTransform.pivot = new Vector2(0f, 1f);
+        host.rectTransform.anchoredPosition = new Vector2(48f, -100f);
+        host.rectTransform.sizeDelta = new Vector2(760f, -160f);
+        SettingsPanel.Build(host.transform);
     }
 
     void BuildPlayTab()

@@ -39,17 +39,22 @@ public class CameraController : MonoBehaviour
 
     void MouseLocker()
     {
-        // mouse lock
+        // the pause menu owns the cursor while it is open — never fight it
+        if (PauseMenu.IsOpen)
+        {
+            if (Cursor.lockState == CursorLockMode.Locked)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+            return;
+        }
+
+        // lock on click when gameplay is active (Escape is handled by PauseMenu)
         if (Input.GetMouseButtonDown(0))
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
-        }
-        // mouse unlock
-        if (Input.GetKeyDown(KeyCode.Escape))
-        {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
         }
     }
 }

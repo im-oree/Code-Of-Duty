@@ -24,6 +24,13 @@ public class Input_Handler : MonoBehaviour
 
     void Update()
     {
+        // pause menu swallows gameplay input (look stays frozen, no fire-through-UI)
+        if (PauseMenu.IsOpen)
+        {
+            cameraController.SetCameraRotation(0f, 0f);
+            return;
+        }
+
         TryShoot();
 
         bodySlope_Handler.setInput(-Input.GetAxisRaw("Slope"));
@@ -60,7 +67,8 @@ public class Input_Handler : MonoBehaviour
             cameraSwitcher.ViewChange();
         }
 
-        cameraController.SetCameraRotation(Input.GetAxis("Mouse Y") * -sensitivity, Input.GetAxis("Mouse X") * sensitivity);
+        float sens = sensitivity * GameSettings.MouseSensitivity;
+        cameraController.SetCameraRotation(Input.GetAxis("Mouse Y") * -sens, Input.GetAxis("Mouse X") * sens);
     }
 
 

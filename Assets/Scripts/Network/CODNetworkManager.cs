@@ -215,6 +215,18 @@ public class CODNetworkManager : MonoBehaviour
         if (ClientActive) fishNet.ClientManager.StopConnection();
         if (ServerActive) fishNet.ServerManager.StopConnection(true);
         matchStarted = false;
+
+        // back to the main menu locally (network objects are torn down by FishNet)
+        ReturnToMenuScene();
+    }
+
+    void ReturnToMenuScene()
+    {
+        var active = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        if (active.name != menuScene)
+            UnityEngine.SceneManagement.SceneManager.LoadScene(menuScene);
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 
     void StartHost()
@@ -320,6 +332,8 @@ public class CODNetworkManager : MonoBehaviour
         if (args.ConnectionState == LocalConnectionState.Stopped && !ServerActive)
         {
             ClientError?.Invoke("Disconnected from server");
+            matchStarted = false;
+            ReturnToMenuScene(); // kicked / host quit → don't strand the player in the arena
         }
     }
 

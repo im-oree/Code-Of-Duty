@@ -26,6 +26,25 @@ public class CameraSwitcher : MonoBehaviour
         return canAim;
     }
 
+    void Start()
+    {
+        ApplyFov();
+        GameSettings.Changed += ApplyFov;
+    }
+
+    void OnDestroy()
+    {
+        GameSettings.Changed -= ApplyFov;
+    }
+
+    /// <summary>Player FOV setting → FPS + TPS cameras (aim camera keeps its authored zoom).</summary>
+    void ApplyFov()
+    {
+        float fov = GameSettings.FieldOfView;
+        if (fpvCamera != null) { var l = fpvCamera.m_Lens; l.FieldOfView = fov; fpvCamera.m_Lens = l; }
+        if (tpvCamera != null) { var l = tpvCamera.m_Lens; l.FieldOfView = fov; tpvCamera.m_Lens = l; }
+    }
+
     private void OnEnable()
     {
         characterMove.OnGroundedValueChange += ApplyIsGround;
