@@ -67,15 +67,35 @@ public class WeaponSlotRig : LocalRig
         constrained.rotation = Quaternion.Lerp(inactiveSlot.rotation, inHandsRotation, weight);
 
         // procedural movement pose (sprint / tac-sprint raise, driven by
-        // WeaponMovementPose) — applied on top of the hand constraint in the
-        // gun's local space, weighted so there is never any snapping
+        // WeaponMovementPose) — applied in CHARACTER space so the axes are
+        // predictable regardless of how the gun/bone hierarchy is oriented:
+        //   position: +x = character right, +y = UP, +z = forward
+        //   euler:    +x = muzzle UP, +y = yaw inward, +z = roll
         if (poseLocalEuler != Vector3.zero || poseLocalPosition != Vector3.zero)
         {
-            constrained.rotation = constrained.rotation * Quaternion.Euler(poseLocalEuler * weight);
-            constrained.position += constrained.rotation * (poseLocalPosition * weight);
+            if (characterRoot == null)
+            {
+                var characterMove = GetComponentInParent<CharacterMove>();
+                characterRoot = characterMove != null ? characterMove.transform : transform.root;
+            }
+
+            Vector3 up = characterRoot.up;
+            Vector3 right = characterRoot.right;
+            Vector3 forward = characterRoot.forward;
+
+            Quaternion poseRotation =
+                Quaternion.AngleAxis(-poseLocalEuler.x * weight, right) *
+                Quaternion.AngleAxis(poseLocalEuler.y * weight, up) *
+                Quaternion.AngleAxis(poseLocalEuler.z * weight, forward);
+
+            constrained.rotation = poseRotation * constrained.rotation;
+            constrained.position += (right * poseLocalPosition.x
+                                   + up * poseLocalPosition.y
+                                   + forward * poseLocalPosition.z) * weight;
         }
     }
 
     [HideInInspector] public Vector3 poseLocalPosition;
     [HideInInspector] public Vector3 poseLocalEuler;
+    Transform characterRoot;
 }

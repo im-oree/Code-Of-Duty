@@ -22,18 +22,18 @@ public class WeaponMovementPose : MonoBehaviour
     public CharacterMove characterMove;
 
     [Header("Sprint pose (two-handed jog, gun stays in frame)")]
-    public Vector3 sprintPositionOffset = new Vector3(-0.01f, 0.025f, -0.05f);
-    public Vector3 sprintEulerOffset = new Vector3(-8f, 5f, 7f);
+    public Vector3 sprintPositionOffset = new Vector3(0f, 0.05f, 0.03f); // char space: x right, y UP, z fwd
+    public Vector3 sprintEulerOffset = new Vector3(12f, 0f, 6f); // +x = muzzle up
 
     [Header("Rules")]
     [Tooltip("Allow firing while sprinting (COD default: no — firing breaks the sprint).")]
     public bool canShootWhileSprinting = false;
 
     [Header("Tac-sprint pose (one-handed, muzzle up)")]
-    public Vector3 tacPositionOffset = new Vector3(-0.025f, 0.045f, -0.08f);
-    public Vector3 tacEulerOffset = new Vector3(38f, 10f, 16f); // +pitch = muzzle up, MW style
+    public Vector3 tacPositionOffset = new Vector3(0.02f, 0.12f, 0.06f);
+    public Vector3 tacEulerOffset = new Vector3(55f, 10f, 8f); // strong muzzle-up, MW style
     [Tooltip("Lighter raise for guns that are already one-handed (pistols).")]
-    public Vector3 tacOneHandedEulerOffset = new Vector3(24f, 6f, 8f);
+    public Vector3 tacOneHandedEulerOffset = new Vector3(35f, 5f, 5f);
 
     [Header("Tac-sprint rules")]
     public float doubleTapWindow = 0.35f;
@@ -77,7 +77,9 @@ public class WeaponMovementPose : MonoBehaviour
         // ---------------- state detection ----------------
         bool movingForward = Input.GetAxisRaw("Vertical") > 0.1f;
         bool sprintHeld = InputBindings.Held("sprint");
-        bool sprinting = sprintHeld && movingForward && characterMove.isGrounded && !weaponController.MeleeMode;
+        bool sprinting = sprintHeld && movingForward && characterMove.isGrounded
+            && !weaponController.MeleeMode
+            && characterMove.currentState == characterMove.standState; // never pose while crouched/sliding
 
         if (InputBindings.Down("sprint"))
         {
