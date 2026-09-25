@@ -23,22 +23,43 @@ public class CODMainMenu : MonoBehaviour
     static bool IsEditMode => !Application.isPlaying;
 
     #region Editor preview — the menu is visible in the editor AT ALL TIMES.
-    // The preview is rebuilt from the CURRENT code every time the scene opens
-    // or scripts recompile (objects are DontSave), so code changes always
-    // reflect — and Play mode rebuilds it again fresh with live wiring.
+    // The preview is rebuilt from the CURRENT code after every scene open and
+    // script recompile, so code changes always reflect. It is destroyed BEFORE
+    // anything that closes the scene (play mode, recompile, save, scene switch)
+    // because DontSave objects leak through scene transitions otherwise
+    // ("Some objects were not cleaned up when closing the scene").
 
+#if UNITY_EDITOR
     void OnEnable()
     {
-        if (IsEditMode) BuildEditorPreview();
+        if (!IsEditMode) return;
+
+        UnityEditor.EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+        UnityEditor.EditorApplication.playModeStateChanged += OnPlayModeChanged;
+        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload -= DestroyPreviewSafe;
+        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += DestroyPreviewSafe;
+
+        // never build during OnEnable itself (scene may still be loading)
+        UnityEditor.EditorApplication.delayCall += DeferredBuildPreview;
     }
 
     void OnDisable()
     {
-        if (IsEditMode) DestroyPreview();
+        UnityEditor.EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload -= DestroyPreviewSafe;
+        UnityEditor.EditorApplication.delayCall -= DeferredBuildPreview;
+
+        // only clean up during a *stable* edit session — never mid-transition
+        if (IsEditMode && !UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode)
+            DestroyPreviewSafe();
     }
 
-    void BuildEditorPreview()
+    void DeferredBuildPreview()
     {
+        if (this == null || !IsEditMode) return;
+        if (UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode) return;
+        if (!gameObject.scene.isLoaded) return;
+
         DestroyPreview();
         BuildCanvas();
         BuildTopBar();
@@ -50,17 +71,44 @@ public class CODMainMenu : MonoBehaviour
         MarkDontSave(stage != null ? stage.gameObject : null);
     }
 
+    void OnPlayModeChanged(UnityEditor.PlayModeStateChange change)
+    {
+        // tear the preview down while the edit scene is still fully alive,
+        // so nothing can leak into play mode
+        if (change == UnityEditor.PlayModeStateChange.ExitingEditMode)
+            DestroyPreviewSafe();
+    }
+
+    void DestroyPreviewSafe()
+    {
+        try { if (this != null) DestroyPreview(); } catch { }
+    }
+#endif
+
+    static readonly string[] PreviewRootNames =
+        { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay" };
+
+    /// <summary>Removes preview objects AND any ghosts that leaked to the scene root.</summary>
     void DestroyPreview()
     {
-        // stale preview roots from an earlier build/recompile
         for (int i = transform.childCount - 1; i >= 0; i--)
         {
             var child = transform.GetChild(i);
             if (child.name == "MenuUI") DestroyImmediate(child.gameObject);
         }
-        var staleStage = GameObject.Find("MenuStage");
-        if (staleStage != null && (staleStage.hideFlags & HideFlags.DontSave) != 0)
-            DestroyImmediate(staleStage);
+
+        var scene = gameObject.scene;
+        if (scene.isLoaded)
+        {
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                if (root == null || root == gameObject) continue;
+                bool ghost = root.name.StartsWith("Panel_");
+                foreach (var name in PreviewRootNames)
+                    if (root.name == name) { ghost = true; break; }
+                if (ghost) DestroyImmediate(root);
+            }
+        }
 
         tabButtons.Clear();
         tabPanels.Clear();

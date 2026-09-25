@@ -59,12 +59,21 @@ public class PauseMenu : MonoBehaviour
     void Open()
     {
         if (canvas == null) BuildUI();
+        EnsureEventSystem(); // arena scenes have no EventSystem — without one, nothing is clickable
         canvas.enabled = true;
         ShowHome();
         IsOpen = true;
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+    }
+
+    static void EnsureEventSystem()
+    {
+        if (Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>() != null) return;
+        var go = new GameObject("EventSystem");
+        go.AddComponent<UnityEngine.EventSystems.EventSystem>();
+        go.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
     }
 
     void Close()

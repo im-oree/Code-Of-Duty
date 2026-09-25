@@ -43,6 +43,9 @@ public class GunChange_SMB : StateMachineBehaviour, IEventCenterComponent, ICurv
     }
     public override void OnStateUpdate(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
     {
+        // display-only rigs (main menu operator) have no WeaponController
+        if (weaponController == null) return;
+
         if (stateInfo.normalizedTime > endTime)
         {
             if (weaponController.nextID == 0) return;

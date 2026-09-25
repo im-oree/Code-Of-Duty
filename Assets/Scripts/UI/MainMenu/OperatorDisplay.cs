@@ -58,8 +58,21 @@ public class OperatorDisplay : MonoBehaviour
             animator.applyRootMotion = false;
             rightHand = animator.isHuman ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
 
-            // gun-hold pose layer used for remote players in matches
-            animator.Play("GunPickUp", 1, 0f);
+            // the gameplay controller needs live movement params (otherwise it
+            // sits in its falling/locomotion default) — the menu uses the kit's
+            // dedicated idle controller instead: standing aim-idle, no SMBs.
+            var menuController = Resources.Load<RuntimeAnimatorController>("Character/MenuIdleAnimator");
+            if (menuController != null)
+            {
+                animator.runtimeAnimatorController = menuController;
+                animator.SetFloat("Blend", 0f);
+            }
+            else
+            {
+                // fallback: freeze the gameplay controller into its grounded idle
+                animator.Play("GunPickUp", 1, 0f);
+            }
+            animator.Update(0f);
         }
 
         if (rightHand == null) rightHand = FindBoneByName(model.transform, "hand_r", "righthand", "hand.r");

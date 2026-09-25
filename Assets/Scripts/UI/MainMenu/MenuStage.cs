@@ -174,6 +174,7 @@ public class MenuStage : MonoBehaviour
         vel.enabled = true;
         vel.x = new ParticleSystem.MinMaxCurve(-0.35f, -0.15f);
         vel.y = new ParticleSystem.MinMaxCurve(0.05f, 0.16f);
+        vel.z = new ParticleSystem.MinMaxCurve(-0.05f, 0.05f); // all axes MUST share a mode
 
         var col = ps.colorOverLifetime;
         col.enabled = true;

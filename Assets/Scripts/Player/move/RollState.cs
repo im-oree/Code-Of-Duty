@@ -17,6 +17,14 @@ public class RollState : MoveStateBase
         characterMove.bodyTurnHandler.momentaryTurn = true;
         characterController.Move(characterMove.rollVelocity * Time.deltaTime);
 
+        // COD slide-cancel: jump out of the slide at any point, KEEPING momentum
+        if (InputBindings.Down("jump") && characterMove.CanStandUp())
+        {
+            characterMove.moveVelocity = characterMove.rollVelocity;
+            characterMove.SetState(characterMove.jumpState);
+            return;
+        }
+
         if (currentTime < rollTime && characterMove.rollVelocity != Vector3.zero)
         {
             // ease-out: fast launch, smooth tail — never a hard stop
