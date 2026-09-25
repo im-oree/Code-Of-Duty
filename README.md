@@ -81,6 +81,30 @@ Networking is the base of everything — all game logic flows through the server
   preview instantly), **BARRACKS** / **STORE** (placeholders for progression
   and cosmetics).
 
+## Configuration systems
+
+- **COD > Game Config** (editor window) — the one place to manage gameplay:
+  General rules (infinite ammo, reserve mags, health), the Gun Manager (edit
+  damage/fire-rate/ammo/recoil on every WeaponDatabase gun + generate 2:1
+  side-view icons that frame long rifles), build Maps list, and Keybind
+  defaults. Edits write straight into the assets/prefabs.
+- **InputBindings** (`Scripts/Settings/InputBindings.cs`) — central keybinding
+  registry. Gameplay code never references KeyCodes; new actions are one
+  `Register(...)` line and appear automatically in the in-game rebind UI.
+  Includes control-style prefs: crouch hold/toggle, tac-sprint trigger
+  (double-tap or auto), fire-while-sprinting.
+- **GameSettings** (`Scripts/Settings/GameSettings.cs`) — persisted player
+  settings applied live: volume, FOV, render scale, MSAA, shadow distance,
+  quality preset, v-sync, fullscreen, mouse sensitivity.
+- **SettingsPanel** — one reusable code-built settings UI, embedded by both the
+  main-menu SETTINGS tab and the in-game ESC pause menu.
+- **Ammo** — per-weapon `magazineSize`/`reloadTime`, reserve magazines from
+  `Resources/GameConfig.asset` (infinite ammo currently ON), R to reload,
+  auto-reload on empty, local AmmoHUD counter.
+- **Main menu in the editor** — `CODMainMenu` is `[ExecuteAlways]`: the full
+  menu + 3D stage render as a DontSave preview in edit mode (rebuilt from
+  current code on every recompile) and are rebuilt live on Play.
+
 ## Importing new guns (GLB pipeline)
 
 1. `.glb` models import natively via the **glTFast** package
