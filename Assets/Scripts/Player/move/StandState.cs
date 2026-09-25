@@ -54,7 +54,7 @@ public class StandState : MoveStateBase
     {
         var inputVector = new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
 
-        isSprint = (Input.GetKey(KeyCode.LeftShift) && inputVector.y > 0 && !walk);
+        isSprint = (InputBindings.Held("sprint") && inputVector.y > 0 && !walk);
 
         Quaternion moveForward = Quaternion.Euler(0, characterMove.directionOrienter.rotation.eulerAngles.y, 0);
 
@@ -71,12 +71,12 @@ public class StandState : MoveStateBase
         characterMove.moveVelocity = Vector3.ClampMagnitude(moveForward * Vector3.forward * forwardMoveSpeed + moveForward * Vector3.right * rightMoveSpeed, currentSpeed) + characterMove.velocity + characterMove.edgeSlipVelocity;
 
 
-        if (Input.GetKeyDown(KeyCode.C))
+        if (InputBindings.Down("crouch"))
         {
             characterMove.SetState(isSprint ? characterMove.rollState : characterMove.crouchState);
         }
 
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (InputBindings.Down("jump"))
         {
             characterMove.SetState(characterMove.jumpState);
         }

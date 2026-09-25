@@ -31,31 +31,31 @@ public class Input_Handler : MonoBehaviour
         //bodyTiltInSprint.SetMouseXMove(Input.GetAxis("Mouse X"));
 
         // 2-weapon loadout: 1 = primary, 2 = secondary, 3 = melee (unarmed)
-        if (Input.GetKeyDown(KeyCode.Alpha1))
+        if (InputBindings.Down("weapon1"))
             weaponController.ToChange(1);
-        if (Input.GetKeyDown(KeyCode.Alpha2))
+        if (InputBindings.Down("weapon2"))
             weaponController.ToChange(2);
-        if (Input.GetKeyDown(KeyCode.Alpha3))
+        if (InputBindings.Down("melee"))
             weaponController.SetMelee(!weaponController.MeleeMode);
 
 
-        if (Input.GetKeyDown(KeyCode.F) && weaponPickUp != null)
+        if (InputBindings.Down("interact") && weaponPickUp != null)
         {
             weaponPickUp.PickupCheck();
         }
 
-        if (Input.GetMouseButtonDown(1))
+        if (InputBindings.Down("aim"))
         {
             //cameraSwitcher.AimViewChange();
             weaponSightHandler.AimViewChange();
         }
-        if (Input.GetMouseButtonDown(2))
+        if (InputBindings.Down("sightSwitch"))
         {
             //cameraSwitcher.AimViewChange();
             weaponSightHandler.AimSightChange();
         }
 
-        if (Input.GetKeyDown(KeyCode.V))
+        if (InputBindings.Down("viewToggle"))
         {
             cameraSwitcher.ViewChange();
         }
@@ -70,24 +70,25 @@ public class Input_Handler : MonoBehaviour
     {
         if (weaponController.MeleeMode)
         {
-            if (Input.GetMouseButtonDown(0)) TryMelee();
+            if (InputBindings.Down("fire")) TryMelee();
             return;
         }
 
         // COD rule: no firing mid-sprint (configurable)
         if (movementPose == null) movementPose = weaponController.GetComponent<WeaponMovementPose>();
-        if (movementPose != null && movementPose.IsSprinting && !movementPose.canShootWhileSprinting)
+        if (movementPose != null && movementPose.IsSprinting &&
+            !movementPose.canShootWhileSprinting && !InputBindings.FireWhileSprinting)
             return;
 
         Weapon current = weaponController.GETCurrentWeapon;
         if (current == null) return;
 
         bool singleshoot = current.singleShoot;
-        if (singleshoot && Input.GetMouseButtonDown(0))
+        if (singleshoot && InputBindings.Down("fire"))
         {
             weaponController.StartShoot();
         }
-        else if (!singleshoot && Input.GetMouseButton(0))
+        else if (!singleshoot && InputBindings.Held("fire"))
         {
             weaponController.StartShoot();
         }

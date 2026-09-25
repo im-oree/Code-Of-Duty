@@ -17,7 +17,11 @@ public class CrouchState : MoveStateBase
 
         characterMove.moveVelocity = Vector3.ClampMagnitude(moveForward * Vector3.forward * verticalInput + moveForward * Vector3.right * horizontalInput, 1) * characterMove.crouchSpeed;
 
-        if (Input.GetKeyDown(KeyCode.C))
+        // toggle mode: stand on second press; hold mode: stand on release
+        bool wantsUp = InputBindings.CrouchIsToggle
+            ? InputBindings.Down("crouch")
+            : !InputBindings.Held("crouch");
+        if (wantsUp)
         {
             if (!characterMove.CanStandUp())
             {

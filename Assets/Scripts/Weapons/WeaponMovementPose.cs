@@ -49,6 +49,7 @@ public class WeaponMovementPose : MonoBehaviour
     float sprintVel, tacVel;
     bool tacActive;
     float lastSprintTap = -10f;
+    float sprintHoldStart = -10f;
     float tacEndTime;
     float preTacLeftHandWeight = 1f;
     bool leftHandOverridden;
@@ -75,21 +76,31 @@ public class WeaponMovementPose : MonoBehaviour
 
         // ---------------- state detection ----------------
         bool movingForward = Input.GetAxisRaw("Vertical") > 0.1f;
-        bool sprintHeld = Input.GetKey(KeyCode.LeftShift);
+        bool sprintHeld = InputBindings.Held("sprint");
         bool sprinting = sprintHeld && movingForward && characterMove.isGrounded && !weaponController.MeleeMode;
 
-        if (Input.GetKeyDown(KeyCode.LeftShift))
+        if (InputBindings.Down("sprint"))
         {
-            if (Time.time - lastSprintTap <= doubleTapWindow && movingForward)
+            if (InputBindings.TacSprintMode == 0 &&
+                Time.time - lastSprintTap <= doubleTapWindow && movingForward)
             {
                 tacActive = true;
                 tacEndTime = Time.time + tacSprintDuration;
             }
             lastSprintTap = Time.time;
+            sprintHoldStart = Time.time;
+        }
+
+        // auto mode: tac sprint engages after sprinting continuously for a moment
+        if (InputBindings.TacSprintMode == 1 && sprinting && !tacActive &&
+            Time.time - sprintHoldStart > 1.1f)
+        {
+            tacActive = true;
+            tacEndTime = Time.time + tacSprintDuration;
         }
 
         // tac sprint breaks on: stopping, timer, firing, aiming, melee
-        if (tacActive && (!sprinting || Time.time > tacEndTime || Input.GetMouseButton(0) || Input.GetMouseButton(1)))
+        if (tacActive && (!sprinting || Time.time > tacEndTime || InputBindings.Held("fire") || InputBindings.Held("aim")))
             tacActive = false;
 
         // ---------------- blending (never snaps) ----------------
