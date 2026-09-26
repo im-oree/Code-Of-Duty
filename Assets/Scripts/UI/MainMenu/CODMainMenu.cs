@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -236,6 +237,19 @@ public class CODMainMenu : MonoBehaviour
         }
 
         uiRoot = canvas.transform;
+
+        // A screen-space Canvas with a zero transform scale still receives
+        // pointer state on its child Selectables, yet its layout can collapse
+        // or render inconsistently. StartMenu had exactly that serialized
+        // corruption, so restore the only meaningful scale for a root Canvas.
+        Vector3 canvasScale = uiRoot.localScale;
+        if (Mathf.Approximately(canvasScale.x, 0f) || Mathf.Approximately(canvasScale.y, 0f) ||
+            Mathf.Approximately(canvasScale.z, 0f))
+        {
+            uiRoot.localScale = Vector3.one;
+            Debug.LogWarning("[CODMainMenu] repaired a zero-scale menu Canvas so UI layout and hit areas agree.");
+        }
+
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 50;
 
@@ -248,11 +262,35 @@ public class CODMainMenu : MonoBehaviour
         if (canvas.GetComponent<GraphicRaycaster>() == null)
             canvas.gameObject.AddComponent<GraphicRaycaster>();
 
+        EnsureEventSystem();
         return true;
+    }
+
+    /// <summary>Guarantees UI input exists even in a scene regenerated from code.</summary>
+    static void EnsureEventSystem()
+    {
+        var system = FindAnyObjectByType<EventSystem>(FindObjectsInactive.Include);
+        if (system != null && system.GetComponent<BaseInputModule>() != null) return;
+
+        GameObject root = system != null ? system.gameObject : new GameObject("EventSystem");
+        if (root.GetComponent<EventSystem>() == null) root.AddComponent<EventSystem>();
+
+        // This project enables both input backends, so the standalone module is
+        // dependable for mouse, keyboard and controller navigation without a
+        // generated Input Actions asset.
+        if (root.GetComponent<BaseInputModule>() == null)
+            root.AddComponent<StandaloneInputModule>();
+
+        Debug.LogWarning("[CODMainMenu] repaired missing EventSystem input module.");
     }
 
     void BuildTopBar()
     {
+        // BuildTopBar adopts serialized objects. Clear the in-memory registry
+        // first so a domain-reload-disabled play session cannot retain stale
+        // button references from a previous run.
+        tabButtons.Clear();
+
         // full-width strip behind the tab bar (stretch-anchored so children
         // measure from the real screen edge on every resolution)
         var bar = UITheme.Image("TopBar", uiRoot, new Color(0f, 0f, 0f, 0.55f));
@@ -278,9 +316,15 @@ public class CODMainMenu : MonoBehaviour
         {
             string id = tab;
             var img = UITheme.Image($"Tab_{tab}", bar.transform, Color.clear);
+            if (img == null)
+            {
+                Debug.LogError($"[CODMainMenu] could not adopt top tab '{tab}'.");
+                continue;
+            }
+
             UITheme.TL(img.rectTransform, x, 18, 170, 52);
-            var button = img.gameObject.AddComponent<Button>();
-            button.onClick.AddListener(() => SelectTab(id));
+            var button = UITheme.BindClick(img, () => SelectTab(id));
+            if (button == null) continue;
 
             var label = UITheme.Text("Label", img.transform, tab, 21, UITheme.TextDim,
                 FontStyles.Bold, TextAlignmentOptions.Center);
@@ -485,13 +529,14 @@ public class CODMainMenu : MonoBehaviour
 
         if (onClick != null)
         {
-            var button = card.gameObject.AddComponent<Button>();
-            button.targetGraphic = card;
-            var colors = button.colors;
-            colors.highlightedColor = new Color(1.6f, 1.6f, 1.6f, 1f);
-            colors.pressedColor = new Color(2f, 2f, 2f, 1f);
-            button.colors = colors;
-            button.onClick.AddListener(onClick);
+            var button = UITheme.BindClick(card, onClick);
+            if (button != null)
+            {
+                var colors = button.colors;
+                colors.highlightedColor = new Color(1.6f, 1.6f, 1.6f, 1f);
+                colors.pressedColor = new Color(2f, 2f, 2f, 1f);
+                button.colors = colors;
+            }
         }
 
         extraContent?.Invoke(card.rectTransform);
@@ -709,9 +754,7 @@ public class CODMainMenu : MonoBehaviour
             UITheme.Place(desc.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 52), new Vector2(240, 60));
             desc.textWrappingMode = TextWrappingModes.Normal;
 
-            var button = card.gameObject.AddComponent<Button>();
-            button.targetGraphic = card;
-            button.onClick.AddListener(() =>
+            UITheme.BindClick(card, () =>
             {
                 PlayerAppearance.SavedSkinIndex = index;
                 stage.operatorDisplay?.RefreshSkin();
@@ -811,9 +854,7 @@ public class CODMainMenu : MonoBehaviour
                     UITheme.TextMain, FontStyles.Bold, TextAlignmentOptions.Center);
                 UITheme.Place(name.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 24), new Vector2(220, 20));
 
-                var button = card.gameObject.AddComponent<Button>();
-                button.targetGraphic = card;
-                button.onClick.AddListener(() =>
+                UITheme.BindClick(card, () =>
                 {
                     loadoutSelection[si] = loadoutOptions[si].FindIndex(o => o.id == id);
                     SaveLoadout();
