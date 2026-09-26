@@ -69,7 +69,7 @@ measured.
 Real defects in `Code-Of-Duty` that the renderer surfaced. These belong to
 Phase 1, not to the harness.
 
-### F1 — Every UI panel is orphaned from its Canvas
+### F1 — Every UI panel is orphaned from its Canvas — FIXED
 
 `Assets/Scenes/StartMenu.unity` has **8 root RectTransforms with no Canvas
 ancestor**:
@@ -107,7 +107,7 @@ camera. Visible in `Artifacts/p0/menu-final.png`.
 
 ---
 
-### F5 — The menu's idle animation is a single frame
+### F5 — The menu's idle animation is a single frame — FIXED
 
 `Assets/Resources/Character/MenuIdleAnimator.controller` has exactly one state,
 `MenuIdle`, and it is bound to the clip `Root|Aim_C_Idle`.
@@ -125,7 +125,9 @@ controller is pointed at a still.
 | `Root|Aim_W_Idle` | 0.70 s | weapon-ready standing idle — the better fit for a menu operator holding a rifle |
 | `Root|Aim_Idle.TL` / `.TR` | 0.67 s | slow lean left/right, useful as an additive |
 
-Fix: repoint `MenuIdle` at `Root|Aim_W_Idle` and set the state to loop.
+Fixed: `MenuIdle` now points at `Root|Aim_W_Idle` (21 frames, `loopTime: 1`).
+The renderer reports `state "MenuIdle" -> clip "Root|Aim_W_Idle"`, 0.70 s, with no
+fallback guess.
 
 ### F6 — Baked root motion must be discarded, and Unity is already doing so
 

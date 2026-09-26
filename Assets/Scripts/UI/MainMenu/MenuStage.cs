@@ -13,17 +13,59 @@ public class MenuStage : MonoBehaviour
 
     Camera cam;
 
-    public static MenuStage Create()
-    {
-        // never allow two stages (a stale one may be saved in the scene)
-        foreach (var old in FindObjectsByType<MenuStage>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            DestroyImmediate(old.gameObject);
+    /// <summary>Where the operator stands, and the yaw that turns him to face the camera.</summary>
+    static readonly Vector3 OperatorPosition = new Vector3(-0.6f, 0f, 0f);
+    static readonly Quaternion OperatorRotation = Quaternion.Euler(0f, -14f, 0f);
 
+    /// <summary>
+    /// Returns the stage that is in the scene, building one only if there is none.
+    ///
+    /// The set — ground, walls, crates, lights, the operator — is saved scene
+    /// content. It is found, not rebuilt. The previous version destroyed every
+    /// MenuStage it could see and made a new one on every play, which is half
+    /// of why two operators appeared: the destroy was immediate for some
+    /// objects and deferred for others, so the rebuild ran while a copy was
+    /// still alive and counted it as absent.
+    ///
+    /// Only the settings that live outside the scene graph are re-applied:
+    /// camera framing and RenderSettings fog/ambient are global state that the
+    /// scene does not own per-object, so they are idempotent to set and cheap.
+    /// </summary>
+    public static MenuStage EnsureInScene()
+    {
+        var existing = FindAnyObjectByType<MenuStage>(FindObjectsInactive.Include);
+        if (existing != null)
+        {
+            existing.Adopt();
+            return existing;
+        }
+
+        Debug.LogWarning("[MenuStage] no MenuStage in the scene — building one from code. " +
+                         "Save the scene to keep it, or run COD / Main Menu / Generate Frontend Scene.");
         var stage = new GameObject("MenuStage").AddComponent<MenuStage>();
         stage.Build();
         return stage;
     }
 
+    /// <summary>Attaches to the set already in the scene without changing it.</summary>
+    void Adopt()
+    {
+        SetupCamera();
+        SetupEnvironmentLighting();
+
+        operatorDisplay = GetComponentInChildren<OperatorDisplay>(true);
+        if (operatorDisplay == null)
+        {
+            Debug.LogWarning("[MenuStage] the stage has no OperatorDisplay — creating one.");
+            operatorDisplay = OperatorDisplay.EnsureUnder(transform, OperatorPosition, OperatorRotation);
+        }
+        else
+        {
+            operatorDisplay.Adopt();
+        }
+    }
+
+    /// <summary>First-run construction. Only reached when the scene has no stage.</summary>
     void Build()
     {
         SetupCamera();
@@ -32,9 +74,7 @@ public class MenuStage : MonoBehaviour
         BuildSmoke();
         BuildDust();
 
-        // the star of the show — yaw ~-18 so he faces the camera (camera looks
-        // down -Z; the player model's forward is +Z at identity)
-        operatorDisplay = OperatorDisplay.Create(transform, new Vector3(-0.6f, 0f, 0f), Quaternion.Euler(0f, -14f, 0f));
+        operatorDisplay = OperatorDisplay.EnsureUnder(transform, OperatorPosition, OperatorRotation);
     }
 
     void SetupCamera()
@@ -48,11 +88,10 @@ public class MenuStage : MonoBehaviour
         cam.clearFlags = CameraClearFlags.SolidColor;
         cam.backgroundColor = new Color(0.02f, 0.025f, 0.03f, 1f);
 
-        // hide any legacy menu lights so we fully own the mood
-        foreach (Light light in FindObjectsByType<Light>(FindObjectsInactive.Include))
-        {
-            if (light.transform.root != transform.root) light.gameObject.SetActive(false);
-        }
+        // Lights outside the stage are deliberately left alone. Switching off
+        // every Light in the scene to "own the mood" also switches off whatever
+        // the next scene or an editor tool put there, and it is not recorded
+        // anywhere — the light just stops working and nothing says why.
     }
 
     void SetupEnvironmentLighting()
@@ -65,8 +104,7 @@ public class MenuStage : MonoBehaviour
         RenderSettings.ambientLight = new Color(0.16f, 0.18f, 0.22f);
 
         // key light (cool, from camera side)
-        Light key = new GameObject("KeyLight").AddComponent<Light>();
-        key.transform.SetParent(transform, false);
+        Light key = EnsureLight("KeyLight");
         key.type = LightType.Directional;
         key.transform.rotation = Quaternion.Euler(38f, 205f, 0f);
         key.color = new Color(0.85f, 0.9f, 1f);
@@ -74,8 +112,7 @@ public class MenuStage : MonoBehaviour
         key.shadows = LightShadows.Soft;
 
         // orange rim/practical from behind-left of the operator
-        Light rim = new GameObject("RimLight").AddComponent<Light>();
-        rim.transform.SetParent(transform, false);
+        Light rim = EnsureLight("RimLight");
         rim.type = LightType.Point;
         rim.transform.position = new Vector3(2.6f, 1.9f, -2.4f);
         rim.color = new Color(1f, 0.55f, 0.1f);
@@ -83,13 +120,31 @@ public class MenuStage : MonoBehaviour
         rim.range = 9f;
 
         // soft cool fill from the right
-        Light fill = new GameObject("FillLight").AddComponent<Light>();
-        fill.transform.SetParent(transform, false);
+        Light fill = EnsureLight("FillLight");
         fill.type = LightType.Point;
         fill.transform.position = new Vector3(-2.4f, 1.4f, 2.2f);
         fill.color = new Color(0.4f, 0.55f, 0.85f);
         fill.intensity = 5f;
         fill.range = 8f;
+    }
+
+    /// <summary>
+    /// The stage light with this name, creating it only if the scene has none.
+    ///
+    /// This method runs on every play, including the adopt path, so creating
+    /// unconditionally would add three more lights to the scene each time you
+    /// pressed Play — and the menu would get visibly brighter the longer you
+    /// worked on it.
+    /// </summary>
+    Light EnsureLight(string name)
+    {
+        Transform existing = transform.Find(name);
+        if (existing != null)
+            return existing.GetComponent<Light>() ?? existing.gameObject.AddComponent<Light>();
+
+        var go = new GameObject(name);
+        go.transform.SetParent(transform, false);
+        return go.AddComponent<Light>();
     }
 
     #region Set dressing

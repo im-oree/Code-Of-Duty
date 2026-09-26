@@ -10,243 +10,124 @@ using UnityEngine.UI;
 /// shooters: top tab bar, big mode cards, operator gallery with realtime
 /// switching, loadout screen, placeholder tabs for future features.
 ///
-/// ## Baked scene objects are the single source of truth
-/// The menu (canvas, tabs, 3D stage) is BAKED into the StartMenu scene as real,
-/// saved GameObjects — visible and editable in edit mode, in play mode, on pause.
-/// <see cref="Start"/> does NOT rebuild anything: it ADOPTS the baked objects and
-/// re-attaches behavior (button listeners, input wiring, discovery) by name,
-/// because C# closures cannot survive a scene save. The build pass is idempotent
-/// find-or-create, so running it at play start is harmless if the bake is already
-/// current — and it self-heals a missing element instead of clobbering edits.
+/// ## The scene is the single source of truth
+///
+/// The canvas, the tabs, the panels and the 3D stage are ordinary saved
+/// GameObjects in StartMenu.unity. You can select them, move them and edit
+/// them, in edit mode and in play mode, and what you see is what ships.
+///
+/// <see cref="Start"/> adopts them. The builder methods below are find-or-create
+/// throughout (see <see cref="UITheme"/>), so running them against a scene that
+/// already contains the menu updates properties and re-attaches listeners
+/// without replacing a single object. Listeners are the reason they run at all:
+/// a C# closure cannot be serialised, so button wiring is the one thing that
+/// genuinely has to be re-established every play.
+///
+/// Nothing here destroys scene content, and nothing constructs the menu behind
+/// your back. Regenerating the layout from code is an explicit editor command,
+/// COD / Main Menu / Generate Frontend Scene.
 /// </summary>
-[ExecuteAlways]
 public class CODMainMenu : MonoBehaviour
 {
-    const string MenuSceneName = "StartMenu";
-
     /// <summary>Root all UI is built under (child object, so editor previews can be swapped cleanly).</summary>
     [SerializeField] Transform uiRoot;
 
-    static bool IsEditMode => !Application.isPlaying;
+    #region Editor tools — the scene is the source of truth
 
-    #region Editor bake — the menu is REAL SAVED SCENE OBJECTS, visible at all times.
-    // In the editor the whole menu (canvas, tabs, 3D stage) is baked into the
-    // scene as plain persistent GameObjects — no HideFlags, no DontSave — so
-    // everything the player sees on play already exists in the saved scene and
-    // can be inspected/tweaked there. After every scene open / script recompile
-    // the bake is refreshed from the CURRENT code (old copy purged, new copy
-    // built in place) so code changes always reflect; save the scene to persist.
-    // At runtime Start() ADOPTS the baked objects and only re-attaches behavior —
-    // it does not destroy and rebuild them, so scene edits made in play mode stay.
+    // There is no bake here, and nothing rebuilds the menu behind your back.
+    //
+    // This class used to have four separate construction paths: an
+    // [ExecuteAlways] bake on OnEnable, a purge in Awake, a rebuild in Start,
+    // and a [RuntimeInitializeOnLoadMethod] that spawned a second menu object
+    // if it could not find one. They all wrote to the same scene objects, in an
+    // order nobody controlled, and two of them destroyed what the others had
+    // just made. That is where the second operator came from: DestroyPreview
+    // removes objects with DestroyImmediate, DedupePreview removes them with
+    // Destroy (deferred to end of frame), and MenuStage.Create() ran in between
+    // — so it counted the not-yet-destroyed copy as absent and made another.
+    //
+    // The menu is now plain saved scene content. Play mode adopts it and
+    // attaches behaviour; it never creates or destroys it. Regeneration is an
+    // explicit editor command, below, because regenerating a scene is a thing
+    // you should have to ask for.
 
 #if UNITY_EDITOR
-    void OnEnable()
-    {
-        if (!IsEditMode) return;
-
-        // never build during OnEnable itself (scene may still be loading)
-        UnityEditor.EditorApplication.delayCall += DeferredBakeMenu;
-    }
-
-    void OnDisable()
-    {
-        UnityEditor.EditorApplication.delayCall -= DeferredBakeMenu;
-        // baked objects are persistent scene content — nothing to destroy here
-    }
-
-    void DeferredBakeMenu()
-    {
-        if (this == null || !IsEditMode) return;
-        if (UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode) return;
-        if (!gameObject.scene.isLoaded) return;
-
-        try
-        {
-            DestroyPreview(); // purge the previous bake (and any legacy ghosts)
-            BuildCanvas();
-            BuildTopBar();
-            BuildTabs();
-            SelectTab("PLAY");
-            stage = MenuStage.Create();
-
-            // persistent scene objects: mark the scene dirty so saving keeps them
-            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
-            Debug.Log("[CODMainMenu] editor menu bake complete (build 5) — save the scene to persist it");
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogException(e);
-        }
-    }
-
-    // ---- Editor tools: diagnose and repair the baked menu scene ----
 
     [UnityEditor.MenuItem("COD/Main Menu/Diagnose Scene")]
     static void DiagnoseScene()
     {
-        var menus = FindObjectsByType<CODMainMenu>(FindObjectsInactive.Include);
-        var stages = FindObjectsByType<MenuStage>(FindObjectsInactive.Include);
-        var displays = FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include);
-        var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
+        var menus = FindObjectsByType<CODMainMenu>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        var stages = FindObjectsByType<MenuStage>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        var displays = FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
         var report = new System.Text.StringBuilder();
-        report.AppendLine("[CODMainMenu] SCENE DIAGNOSIS (" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + ")");
+        report.AppendLine("[CODMainMenu] SCENE DIAGNOSIS (" + SceneManager.GetActiveScene().name + ")");
         report.AppendLine($"  CODMainMenu instances : {menus.Length}  {(menus.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
         report.AppendLine($"  MenuStage instances   : {stages.Length}  {(stages.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
         report.AppendLine($"  OperatorDisplay       : {displays.Length}  {(displays.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
         report.AppendLine($"  Canvas instances      : {canvases.Length}");
+
         foreach (var d in displays)
-            report.AppendLine($"    - '{d.name}' under '{(d.transform.parent != null ? d.transform.parent.name : "ROOT")}'");
-        foreach (var s in stages)
-            report.AppendLine($"    - stage '{s.name}' operatorDisplay={(s.operatorDisplay != null ? s.operatorDisplay.name : "null")}");
+            report.AppendLine($"    - operator '{d.name}' under '{(d.transform.parent != null ? d.transform.parent.name : "ROOT")}'");
+
+        // A RectTransform at the scene root is invisible: uGUI only draws inside
+        // a Canvas, and it does not warn about UI parked outside one.
+        foreach (var root in SceneManager.GetActiveScene().GetRootGameObjects())
+        {
+            if (root.transform is RectTransform)
+                report.AppendLine($"  ORPHANED UI           : '{root.name}' is a RectTransform at the scene root and will NOT be drawn");
+        }
 
         var menu = menus.Length > 0 ? menus[0] : null;
         if (menu != null)
+        {
             report.AppendLine($"  menu canvas           : {(menu.canvas != null ? menu.canvas.name : "NULL <-- UI WILL BE MISSING")}");
+            if (menu.canvas != null && menu.canvas.transform.childCount == 0)
+                report.AppendLine("  canvas has NO CHILDREN <-- the panels are somewhere else");
+        }
 
         Debug.Log(report.ToString());
     }
 
-    [UnityEditor.MenuItem("COD/Main Menu/Repair Scene")]
-    static void RepairScene()
+    /// <summary>
+    /// Rebuilds the menu into the open scene from the code below.
+    ///
+    /// Destructive and deliberately manual: it exists so a code change to the
+    /// layout can be materialised into the scene, after which the scene is
+    /// again the source of truth. Save the scene to keep the result.
+    /// </summary>
+    [UnityEditor.MenuItem("COD/Main Menu/Generate Frontend Scene")]
+    static void GenerateFrontendScene()
     {
-        var menu = FindAnyObjectByType<CODMainMenu>();
+        var menu = FindAnyObjectByType<CODMainMenu>(FindObjectsInactive.Include);
         if (menu == null)
         {
-            Debug.LogError("[CODMainMenu] no CODMainMenu in the open scene — nothing to repair.");
+            Debug.LogError("[CODMainMenu] no CODMainMenu in the open scene — nothing to generate into.");
             return;
         }
 
-        try
-        {
-            menu.DestroyPreview();   // removes every duplicate/ghost
-            menu.BuildCanvas();
-            menu.BuildTopBar();
-            menu.BuildTabs();
-            menu.SelectTab("PLAY");
-            menu.stage = MenuStage.Create();
+        if (!UnityEditor.EditorUtility.DisplayDialog(
+                "Generate Frontend Scene",
+                "This replaces the menu UI in the open scene with a fresh build from code. " +
+                "Any hand edits to the generated objects are lost.\n\nContinue?",
+                "Generate", "Cancel"))
+            return;
 
-            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(menu.gameObject.scene);
-            UnityEditor.SceneManagement.EditorSceneManager.SaveOpenScenes();
-            Debug.Log("[CODMainMenu] repair complete — one operator, one stage, one UI. Scene saved.");
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogException(e);
-        }
+        menu.AdoptCanvas();
+        menu.BuildTopBar();
+        menu.BuildTabs();
+        menu.BuildLobbyOverlay();
+        menu.SelectTab("PLAY");
+        menu.stage = MenuStage.EnsureInScene();
+
+        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(menu.gameObject.scene);
+        Debug.Log("[CODMainMenu] frontend generated into the open scene — save the scene to persist it.");
     }
+
 #endif
 
-    static readonly string[] PreviewRootNames =
-    { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay", "OperatorDisplay", "OperatorModel", "Panel_" };
-
-    /// <summary>
-    /// Removes preview objects AND any ghosts. Sweeps by name AND by component type, because a
-    /// stale bake can leave an extra MenuStage/OperatorDisplay behind under any name — which is
-    /// exactly how you end up with two operators standing in the menu.
-    /// </summary>
-    /// <summary>Removes every menu object built by any previous version of this
-    /// code, including baked copies, editor previews, and scene-root ghosts.
-    /// Prefix matching also catches duplicates like "TopBar (1)".</summary>
-    void DestroyPreview()
-    {
-        // 1. UI built under us
-        for (int i = transform.childCount - 1; i >= 0; i--)
-        {
-            var child = transform.GetChild(i);
-            if (MatchesMenuName(child.name)) DestroyImmediate(child.gameObject);
-        }
-
-        // 2. duplicate CODMainMenu instances (duplicate menu = duplicate bakes)
-        foreach (var other in FindObjectsByType<CODMainMenu>(FindObjectsInactive.Include))
-            if (other != null && other != this)
-                DestroyImmediate(other.gameObject);
-
-        // 3. scene root, by name
-        var scene = gameObject.scene;
-        if (scene.isLoaded)
-        {
-            foreach (var root in scene.GetRootGameObjects())
-            {
-                if (root == null || root == gameObject) continue;
-                if (MatchesMenuName(root.name)) DestroyImmediate(root);
-            }
-        }
-
-        // 4. whole scene, by COMPONENT — catches renamed or leftover preview objects
-        foreach (var staleStage in FindObjectsByType<MenuStage>(FindObjectsInactive.Include))
-            if (staleStage != null) DestroyImmediate(staleStage.gameObject);
-        foreach (var staleDisplay in FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include))
-            if (staleDisplay != null) DestroyImmediate(staleDisplay.gameObject);
-
-        stage = null;
-        canvas = null;
-        tabButtons.Clear();
-        tabPanels.Clear();
-        operatorCards.Clear();
-        loadoutCards.Clear();
-    }
-
-    /// <summary>
-    /// Runtime safety net: whatever the scene contained, exactly ONE MenuStage and ONE
-    /// OperatorDisplay survive. This is the direct fix for "two characters spawn on play".
-    /// </summary>
-    void DedupePreview()
-    {
-        var stages = FindObjectsByType<MenuStage>(FindObjectsInactive.Include);
-        foreach (var s in stages)
-        {
-            if (s == null || s == stage) continue;
-            Debug.LogWarning($"[CODMainMenu] removing duplicate MenuStage '{s.name}'");
-            Destroy(s.gameObject);
-        }
-
-        OperatorDisplay keep = stage != null ? stage.operatorDisplay : null;
-        var displays = FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include);
-        foreach (var d in displays)
-        {
-            if (d == null || d == keep) continue;
-            Debug.LogWarning($"[CODMainMenu] removing duplicate OperatorDisplay '{d.name}'");
-            Destroy(d.gameObject);
-        }
-
-        // exactly one canvas for the menu
-        var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
-        var menuCanvases = new List<Canvas>();
-        foreach (var c in canvases)
-            if (c.GetComponentInParent<CODMainMenu>() != null) menuCanvases.Add(c);
-        for (int i = 1; i < menuCanvases.Count; i++)
-        {
-            Debug.LogWarning($"[CODMainMenu] removing duplicate menu Canvas '{menuCanvases[i].name}'");
-            Destroy(menuCanvases[i].gameObject);
-        }
-    }
-
-    static bool MatchesMenuName(string name)
-    {
-        foreach (var prefix in PreviewRootNames)
-            if (name.StartsWith(prefix)) return true;
-        return false;
-    }
-
     #endregion
-
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    static void Bootstrap()
-    {
-        SceneManager.sceneLoaded -= OnSceneLoaded;
-        SceneManager.sceneLoaded += OnSceneLoaded;
-        TrySpawn(SceneManager.GetActiveScene());
-    }
-
-    static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => TrySpawn(scene);
-
-    static void TrySpawn(Scene scene)
-    {
-        if (scene.name != MenuSceneName) return;
-        if (FindAnyObjectByType<CODMainMenu>() != null) return;
-        new GameObject("CODMainMenu").AddComponent<CODMainMenu>();
-    }
 
     [SerializeField] MenuStage stage;
     [SerializeField] Canvas canvas;
@@ -279,55 +160,46 @@ public class CODMainMenu : MonoBehaviour
     List<List<WeaponDatabase.Entry>> loadoutOptions;
     List<int> loadoutSelection;
 
-    void Awake()
-    {
-        // earliest possible cleanup: a saved scene may contain baked menu
-        // copies (or ghosts from older versions) — wipe them before anything
-        // else runs so play mode ALWAYS starts from a clean slate.
-        if (!IsEditMode) Phase("awake purge", DestroyPreview);
-    }
-
+    /// <summary>
+    /// Adopts the menu that is already in the scene and attaches behaviour to it.
+    ///
+    /// Nothing here creates or destroys scene content. Button listeners and
+    /// event subscriptions are C# closures, which cannot be serialised, so they
+    /// are the one thing that genuinely has to be re-established every run —
+    /// and re-attaching a listener does not require rebuilding the object it
+    /// belongs to.
+    ///
+    /// If a piece is missing this says which one and stops, rather than
+    /// silently building a replacement. A menu that half-works is harder to
+    /// diagnose than one that refuses to start and names the problem.
+    /// </summary>
     void Start()
     {
-        if (IsEditMode) return;
-
-        // Each phase is isolated: one broken subsystem (stage, network, vfx)
-        // must NEVER take the whole menu UI down with it.
-        Phase("purge baked copy", DestroyPreview); // replaced by the live wired build below
-        Phase("hide legacy menu", HideLegacyMenu);
-        Phase("3D stage", () => stage = MenuStage.Create());
-        Phase("network manager", () =>
+        if (!AdoptCanvas())
         {
-            var manager = CODNetworkManager.EnsureExists();
-            discovery = manager != null ? manager.discovery : null;
-        });
-        Phase("dedupe preview", DedupePreview);
-        Phase("menu UI", () =>
-        {
-            BuildCanvas();
-            BuildTopBar();
-            BuildTabs();
-            BuildLobbyOverlay();
-            SelectTab("PLAY");
-        });
-        Phase("lobby events", () =>
-        {
-            CODLobbyPlayer.LobbyChanged += RefreshLobby;
-            CODLobbyPlayer.LocalPlayerJoined += ShowLobby;
-            CODNetworkManager.ClientError += OnClientError;
-        });
-        Phase("server discovery", StartBrowserDiscovery);
-
-        Debug.Log("[CODMainMenu] runtime menu build finished (build 5)");
-    }
-
-    static void Phase(string label, System.Action action)
-    {
-        try { action(); }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"[CODMainMenu] phase '{label}' failed — menu continues without it. {e}");
+            Debug.LogError(
+                "[CODMainMenu] no Canvas found under this object. The frontend lives in the " +
+                "scene: run COD / Main Menu / Diagnose Scene, or regenerate it with " +
+                "COD / Main Menu / Generate Frontend Scene.");
+            enabled = false;
+            return;
         }
+
+        stage = MenuStage.EnsureInScene();
+
+        BuildTopBar();
+        BuildTabs();
+        BuildLobbyOverlay();
+
+        var manager = CODNetworkManager.EnsureExists();
+        discovery = manager != null ? manager.discovery : null;
+
+        CODLobbyPlayer.LobbyChanged += RefreshLobby;
+        CODLobbyPlayer.LocalPlayerJoined += ShowLobby;
+        CODNetworkManager.ClientError += OnClientError;
+
+        SelectTab(string.IsNullOrEmpty(activeTab) ? "PLAY" : activeTab);
+        StartBrowserDiscovery();
     }
 
     void OnDestroy()
@@ -338,31 +210,45 @@ public class CODMainMenu : MonoBehaviour
         if (discovery != null) discovery.OnServerFound.RemoveListener(OnServerFound);
     }
 
-    static void HideLegacyMenu()
-    {
-        foreach (var canvas in FindObjectsByType<Canvas>(FindObjectsInactive.Include))
-        {
-            if (canvas.GetComponentInParent<CODMainMenu>() == null)
-                canvas.gameObject.SetActive(false);
-        }
-    }
-
     #region Canvas & top bar
 
-    void BuildCanvas()
+    /// <summary>
+    /// Takes ownership of the Canvas already in the scene, creating one only if
+    /// the scene has none.
+    ///
+    /// The Canvas and its panels are saved scene objects: they keep their
+    /// fileIDs, their inspector edits, and their place in the hierarchy across
+    /// play mode. Replacing them every run is what made the menu impossible to
+    /// edit — you were always looking at something the editor was about to
+    /// throw away.
+    /// </summary>
+    bool AdoptCanvas()
     {
-        var root = new GameObject("MenuUI");
-        root.transform.SetParent(transform, false);
-        uiRoot = root.transform;
+        canvas = GetComponentInChildren<Canvas>(true);
 
-        canvas = root.AddComponent<Canvas>();
+        if (canvas == null)
+        {
+            var root = new GameObject("MenuUI");
+            root.transform.SetParent(transform, false);
+            canvas = root.AddComponent<Canvas>();
+            Debug.LogWarning("[CODMainMenu] scene had no menu Canvas — created one. " +
+                             "Run COD / Main Menu / Generate Frontend Scene and save.");
+        }
+
+        uiRoot = canvas.transform;
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 50;
-        var scaler = root.AddComponent<CanvasScaler>();
+
+        var scaler = canvas.GetComponent<CanvasScaler>();
+        if (scaler == null) scaler = canvas.gameObject.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.matchWidthOrHeight = 0.5f;
-        root.AddComponent<GraphicRaycaster>();
+
+        if (canvas.GetComponent<GraphicRaycaster>() == null)
+            canvas.gameObject.AddComponent<GraphicRaycaster>();
+
+        return true;
     }
 
     void BuildTopBar()
@@ -501,13 +387,19 @@ public class CODMainMenu : MonoBehaviour
 
     void BuildTabs()
     {
-        // one broken tab must never take the other five down with it
-        Phase("PLAY tab", BuildPlayTab);
-        Phase("OPERATORS tab", BuildOperatorsTab);
-        Phase("LOADOUT tab", BuildLoadoutTab);
-        Phase("BARRACKS tab", BuildBarracksTab);
-        Phase("STORE tab", BuildStoreTab);
-        Phase("SETTINGS tab", BuildSettingsTab);
+        // These are pure construction from constants — no scene lookups, no
+        // player data, nothing that can fail for an environmental reason. The
+        // old code wrapped each one in a try/catch that logged and continued,
+        // which turned "this tab has a bug" into "the menu is subtly missing
+        // something" and left a half-built hierarchy for the next pass to trip
+        // over. If one of these throws, the exception and its stack trace are
+        // the most useful thing that can happen.
+        BuildPlayTab();
+        BuildOperatorsTab();
+        BuildLoadoutTab();
+        BuildBarracksTab();
+        BuildStoreTab();
+        BuildSettingsTab();
     }
 
     void BuildSettingsTab()
