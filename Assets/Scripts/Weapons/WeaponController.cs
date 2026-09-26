@@ -9,8 +9,28 @@ public class WeaponController : MonoBehaviour
     //public SlotController[] slots;
     //public SlotController GETCurrentSlot => slots[activeID - 1];
     public WeaponSlotRig[] slots;
-    public WeaponSlotRig GETCurrentSlot => slots[activeID - 1];
-    public Weapon GETCurrentWeapon => slots[activeID - 1].GetComponentInChildren<Weapon>();
+
+    /// <summary>
+    /// The slot currently in hand, or null if <see cref="activeID"/> has not been set up yet.
+    /// Bounds-checked: activeID is 1-based and is 0 until something assigns it, which used to
+    /// index slots[-1] and throw before any of the null guards downstream got a chance to run.
+    /// </summary>
+    public WeaponSlotRig GETCurrentSlot =>
+        slots != null && activeID >= 1 && activeID <= slots.Length ? slots[activeID - 1] : null;
+
+    /// <summary>
+    /// The gun currently in hand, or null if the slot is empty.
+    /// Includes inactive objects, because holstered guns are switched off in COD-style
+    /// visibility mode and a holstered gun is still the gun that lives in that slot.
+    /// </summary>
+    public Weapon GETCurrentWeapon
+    {
+        get
+        {
+            var slot = GETCurrentSlot;
+            return slot != null ? slot.GetComponentInChildren<Weapon>(true) : null;
+        }
+    }
 
 
     /*  public TwoBoneIK rightHandIK;
@@ -73,7 +93,14 @@ public class WeaponController : MonoBehaviour
 
     public void StartShoot()
     {
-        if (GETCurrentWeapon.Shoot())
+        // Deliberately NOT gated on canShoot: this is also the entry point the network uses to
+        // replay a remote player's shots for visuals, and a remote rig whose draw animation is
+        // a few frames behind would silently swallow them. The "don't fire mid-switch" rule
+        // belongs to the local input path, which is where the intent originates.
+        var weapon = GETCurrentWeapon;
+        if (weapon == null) return;
+
+        if (weapon.Shoot())
             OnShoot?.Invoke();
     }
 
@@ -128,26 +155,30 @@ public class WeaponController : MonoBehaviour
     void ApplyHandsIKTarget(int handId, string pointName)
     {
         var handIk = handId > 0 ? leftHandIK : rightHandIK;
+        if (handIk == null) return;
+
+        var weapon = GETCurrentWeapon;
+        if (weapon == null || weapon.weaponPoints == null) { handIk.target = null; return; }
 
         switch (pointName)
         {
             case "RightHandDefault":
-                handIk.target = (from f in GETCurrentWeapon.weaponPoints
+                handIk.target = (from f in weapon.weaponPoints
                                  where f.GetComponent<WeaponPoint>().pointType == WeaponPoint.PointType.RightHandDefault
                                  select f).SingleOrDefault()?.transform;
                 break;
             case "LeftHandDefault":
-                handIk.target = (from f in GETCurrentWeapon.weaponPoints
+                handIk.target = (from f in weapon.weaponPoints
                                  where f.GetComponent<WeaponPoint>().pointType == WeaponPoint.PointType.LeftHandDefault
                                  select f).SingleOrDefault()?.transform;
                 break;
             case "RightHandguard":
-                handIk.target = (from f in GETCurrentWeapon.weaponPoints
+                handIk.target = (from f in weapon.weaponPoints
                                  where f.GetComponent<WeaponPoint>().pointType == WeaponPoint.PointType.RightHandguard
                                  select f).SingleOrDefault()?.transform;
                 break;
             case "LeftHandguard":
-                handIk.target = (from f in GETCurrentWeapon.weaponPoints
+                handIk.target = (from f in weapon.weaponPoints
                                  where f.GetComponent<WeaponPoint>().pointType == WeaponPoint.PointType.LeftHandguard
                                  select f).SingleOrDefault()?.transform;
                 break;
@@ -170,6 +201,44 @@ public class WeaponController : MonoBehaviour
         this.nextID = nextGunSlotID;
 
         animator.CrossFadeInFixedTime(animaName, switchBlendTime, 1);
+    }
+
+    /// <summary>
+    /// Re-point everything that cached something from the gun that was just replaced.
+    ///
+    /// The loadout system destroys a slot's default weapon and instantiates the chosen one in
+    /// its place. Nothing else knew that happened, so the hand IK went on aiming at
+    /// <see cref="WeaponPoint"/> transforms inside a destroyed object, and the fresh gun never
+    /// received the parenting, weight and offset events that the draw animation fires. The
+    /// result was a player holding nothing, with hands frozen in a pose belonging to a gun that
+    /// no longer existed -- and a stream of null-reference exceptions from the IK solver.
+    ///
+    /// Safe to call at any time, and cheap, so callers do not have to reason about whether a
+    /// swap actually changed anything.
+    /// </summary>
+    public void RebindAfterWeaponSwap()
+    {
+        if (slots == null || slots.Length == 0) return;
+
+        // A swap cancels any switch that was in flight; its target may no longer exist.
+        nextID = 0;
+        activeID = Mathf.Clamp(activeID <= 0 ? 1 : activeID, 1, slots.Length);
+        changed = false;
+        canShoot = !MeleeMode;
+
+        if (GETCurrentWeapon == null) return;
+
+        // Re-resolve the hand IK onto the new gun's points.
+        ApplyHandsIKTarget(0, "RightHandDefault");
+        ApplyHandsIKTarget(1, "LeftHandDefault");
+
+        // Let the listeners that cache per-weapon values (recoil model, view resistance, sights)
+        // read the new gun.
+        if (eventsCenter != null) eventsCenter.InvokeWeaponChange(false);
+
+        // Replay the draw so the animation events re-apply gun parenting, slot weight and the
+        // in-hand position offset to the weapon that is actually there now.
+        if (animator != null) animator.Play("GunPickUp", 1, 0f);
     }
 
     #region COD-style visibility & melee

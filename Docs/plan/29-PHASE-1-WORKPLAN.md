@@ -100,6 +100,36 @@ It is now the only path intent travels.
 - Also closes **F4** (tac sprint was gated on `Input.GetAxisRaw("Vertical")`, so a gamepad player
   could sprint but never tac-sprint).
 
+### 1.6 Weapon handling bugs found in play testing — **DONE**
+
+Reported: in a networked match the gun flashes on screen and vanishes, the hands hold nothing,
+and the console throws `NullReferenceException`; separately, in *both* offline and match, firing
+the full-auto rifle makes the weapon appear to switch itself, while the pistol is fine.
+
+Two independent causes:
+
+- **Recoil compounded instead of recovering.** `RecoilController.ApplyPositionRecoil` runs a
+  one-second curve and feeds its own output back through `lastPosition`/`lastRotation`. The N4
+  rifle fires every 0.07 s, so every shot killed the recovery and restarted the curve from the
+  already-displaced pose — roughly fourteen times a second. The weapon walked out of the hands
+  within a moment, which reads as the gun switching or disappearing the instant you hold the
+  trigger. `Glok_Pistol` is `singleShoot`, so its curve had time to finish: hence "the pistol
+  works". Each kick now re-bases on a captured rest pose and settles exactly back onto it.
+- **The loadout swap orphaned every reference to the gun it destroyed.** `PlayerLoadout` only
+  runs in a networked match (`OnStartClient`), which is exactly why offline was fine. It
+  destroys a slot's default weapon and instantiates the chosen one, but the hand IK kept
+  aiming at `WeaponPoint` transforms inside the destroyed object, and the new gun never received
+  the parenting, slot-weight and offset events that the `GunPickUp` animation fires — so it was
+  never brought into the hands. `WeaponController.RebindAfterWeaponSwap()` now re-resolves the
+  IK, re-raises `OnWeaponChange` for the listeners that cache per-weapon values, and replays the
+  draw against the gun that actually exists.
+
+Hardening done alongside: `GETCurrentSlot`/`GETCurrentWeapon` are bounds-checked and include
+inactive objects (`activeID` is 1-based and starts at 0, which indexed `slots[-1]`); the local
+fire path respects `canShoot` so you cannot fire a gun that is mid-holster, while the network
+replay path deliberately does not, so remote shots are never swallowed; and `RecoilController`
+no longer writes global `Time.timeScale` every frame from a per-player component.
+
 ### 1.5 Assembly definitions
 - Introduce `Contracts` → `Net` → `Sim` → `Presentation` → `UI` → `Editor` in **one** commit
   (doc 05 §3). Partial adoption creates circular-reference errors.

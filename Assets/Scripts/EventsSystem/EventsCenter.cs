@@ -27,6 +27,13 @@ public class EventsCenter : MonoBehaviour
     public delegate void WeaponChange(bool changed);
     public event WeaponChange OnWeaponChange;
 
+    /// <summary>
+    /// Raise the weapon-change event from code. Normally it is fired by animation events
+    /// through reflection, but a loadout swap has to tell the same listeners to re-read the
+    /// weapon without an animation having played.
+    /// </summary>
+    public void InvokeWeaponChange(bool changing) => OnWeaponChange?.Invoke(changing);
+
     public void EventInvoke(string eventName, object[] parameters)
     {
         // Debug.Log(eventName);

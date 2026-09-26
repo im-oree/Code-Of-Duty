@@ -6,7 +6,6 @@ using UnityEngine;
 
 public class RecoilController : MonoBehaviour
 {
-    public float timeScale;
     public EventsCenter eventsCenter;
     public CameraController cameraController;
     public WeaponController weaponController;
@@ -16,6 +15,14 @@ public class RecoilController : MonoBehaviour
 
     public Vector3 lastPosition;
     public Quaternion lastRotation;
+
+    // Rest pose of the recoil pivots, captured before anything kicks them.
+    Vector3 restPosition;
+    Quaternion restRotation;
+    bool restCaptured;
+
+    // Only the recoil routines, so stopping a kick cannot cancel unrelated work.
+    Coroutine cameraRecoilRoutine, rotationRecoilRoutine, positionRecoilRoutine;
 
     // OnShoot also fires on REMOTE rigs (NetCMDs.ObserversShoot replays shots
     // for visuals) — only the locally-owned rig may shake the local camera.
@@ -47,22 +54,52 @@ public class RecoilController : MonoBehaviour
 
     private void Start()
     {
-        recoilParametersModel = weaponController.GETCurrentWeapon.recoilParametersModel;
+        CaptureRestPose();
+
+        var weapon = weaponController.GETCurrentWeapon;
+        if (weapon != null) recoilParametersModel = weapon.recoilParametersModel;
     }
 
-    private void Update()
+    void CaptureRestPose()
     {
-        Time.timeScale = timeScale;
+        if (restCaptured) return;
+        if (weaponPositionRecoilPivot != null) restPosition = weaponPositionRecoilPivot.localPosition;
+        if (weaponRotationRecoilPivot != null) restRotation = weaponRotationRecoilPivot.localRotation;
+        restCaptured = true;
     }
 
     void weaponChangeCheck(bool changed)
     {
-        if (!changed) recoilParametersModel = weaponController.GETCurrentWeapon.recoilParametersModel;
+        if (changed) return;
+        var weapon = weaponController.GETCurrentWeapon;
+        if (weapon != null) recoilParametersModel = weapon.recoilParametersModel;
     }
 
     void RecoilStarter()
     {
-        StopAllCoroutines();
+        var currentWeapon = weaponController.GETCurrentWeapon;
+        if (currentWeapon == null) return;
+
+        CaptureRestPose();
+
+        // Stop only the previous kick. StopAllCoroutines() here would also kill anything else
+        // this component ever starts, which is a trap waiting for the next person to add one.
+        if (cameraRecoilRoutine != null) StopCoroutine(cameraRecoilRoutine);
+        if (rotationRecoilRoutine != null) StopCoroutine(rotationRecoilRoutine);
+        if (positionRecoilRoutine != null) StopCoroutine(positionRecoilRoutine);
+
+        // Re-base the kick on the rest pose.
+        //
+        // Each recoil curve takes a full second to travel out and settle back, but a full-auto
+        // rifle fires every 0.07s. Every shot therefore interrupted the previous recovery and
+        // then started the next curve from wherever the gun had been left -- and since the
+        // routines feed their own output back in through lastPosition/lastRotation, the
+        // displacement compounded about fourteen times a second. Within a moment the weapon had
+        // wandered completely out of the hands and off screen, which reads as the gun vanishing
+        // or swapping itself the instant you hold the trigger. Single-shot weapons hid the bug
+        // because their curve had time to finish between clicks.
+        lastPosition = restPosition;
+        lastRotation = restRotation;
 
         // cosmetic screen-shake layered on top of the aim recoil (local only).
         // heavier weapon classes kick the camera harder.
@@ -82,11 +119,11 @@ public class RecoilController : MonoBehaviour
             CameraShake.FireKick(strength);
         }
 
-        StartCoroutine(ApplyCameraRecoil(weaponController.GETCurrentWeapon.recoilParametersModel.cameraRecoilAxes));
+        var model = currentWeapon.recoilParametersModel;
 
-        StartCoroutine(ApplyPositionRecoil(weaponRotationRecoilPivot, weaponController.GETCurrentWeapon.recoilParametersModel.weaponRotationRecoilAxes, true));
-
-        StartCoroutine(ApplyPositionRecoil(weaponPositionRecoilPivot, weaponController.GETCurrentWeapon.recoilParametersModel.weaponPositionRecoilAxes, false));
+        cameraRecoilRoutine = StartCoroutine(ApplyCameraRecoil(model.cameraRecoilAxes));
+        rotationRecoilRoutine = StartCoroutine(ApplyPositionRecoil(weaponRotationRecoilPivot, model.weaponRotationRecoilAxes, true));
+        positionRecoilRoutine = StartCoroutine(ApplyPositionRecoil(weaponPositionRecoilPivot, model.weaponPositionRecoilAxes, false));
     }
 
     IEnumerator ApplyCameraRecoil(RecoilParametersModel.RecoilAxis[] recoilAxes)
@@ -111,6 +148,8 @@ public class RecoilController : MonoBehaviour
 
     IEnumerator ApplyPositionRecoil(Transform pivot, RecoilParametersModel.RecoilAxis[] recoilAxes, bool recoilRotate)
     {
+        if (pivot == null || recoilAxes == null || recoilAxes.Length == 0) yield break;
+
        // var startState = recoilRotate ? GetStartState(pivot.localRotation.eulerAngles, recoilAxes) : GetStartState(pivot.localPosition, recoilAxes);
 
         //var startState = recoilRotate ? GetStartState(pivot.localRotation.eulerAngles, recoilAxes) : GetStartState(pivot.GetComponent<LocalRigs.PositionConstrained>().fromTransform.lastPostition, recoilAxes);
@@ -151,6 +190,11 @@ public class RecoilController : MonoBehaviour
             t += Time.deltaTime;
             yield return null;
         }
+
+        // Land exactly on rest. Curves that do not quite evaluate to zero at t=1 would otherwise
+        // leave a sliver of offset behind on every single shot.
+        if (recoilRotate) { pivot.localRotation = restRotation; lastRotation = restRotation; }
+        else { pivot.localPosition = restPosition; lastPosition = restPosition; }
     }
 
     Vector3 GetStartState(Vector3 currentPivotPosition, RecoilParametersModel.RecoilAxis[] recoilAxes)

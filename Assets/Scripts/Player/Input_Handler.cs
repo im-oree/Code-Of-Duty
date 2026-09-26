@@ -119,6 +119,9 @@ public class Input_Handler : MonoBehaviour
             !movementPose.canShootWhileSprinting && !InputBindings.FireWhileSprinting)
             return;
 
+        // canShoot is false while a draw/holster animation owns the gun.
+        if (!weaponController.canShoot) return;
+
         Weapon current = weaponController.GETCurrentWeapon;
         if (current == null) return;
 

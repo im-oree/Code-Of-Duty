@@ -16,9 +16,17 @@ public class BodySlope_Handler : MonoBehaviour
     /// <summary>Last lean intent pushed in, kept raw so the collision probe can reuse it.</summary>
     float leanInput;
 
+    /// <summary>
+    /// True once this body is driven by a local input source. Remote bodies are driven by the
+    /// network, which writes <see cref="targetAngle"/> directly — recomputing it from a lean
+    /// input they never supply would force every remote player bolt upright.
+    /// </summary>
+    bool locallyDriven;
+
     public void setInput(float InputAngle)
     {
         leanInput = InputAngle;
+        locallyDriven = true;
     }
 
     void LateUpdate()
@@ -27,7 +35,7 @@ public class BodySlope_Handler : MonoBehaviour
         // ran last, so the lean angle was always scaled by the *previous* frame's wall distance
         // and the body clipped a corner for one frame on the way in.
         CheckBodyCollision();
-        targetAngle = leanInput * maxSlopeAngle * hitDistance;
+        if (locallyDriven) targetAngle = leanInput * maxSlopeAngle * hitDistance;
         bodySlope.slopeAngle = SmoothValue(bodySlope.slopeAngle, targetAngle, bodySlopeChangeRate);
     }
 
