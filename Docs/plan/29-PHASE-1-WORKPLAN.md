@@ -1,0 +1,186 @@
+# 29 — Phase 1 Work Plan (task level)
+
+The user's instruction: *"fix issues first before anything"*, then build. This is the execution
+plan for P0 + P1 (doc 04), broken into commits.
+
+---
+
+## Track 0 — Foundation (runs first, unblocks everything)
+
+| # | Task | Output | Status |
+|---|---|---|---|
+| 0.1 | Verify a headless browser with WebGL exists | Chromium 131 + SwiftShader, 1.1 s/frame | ✅ **done** |
+| 0.2 | Clone Three-FPS, gitignore it, keep it out of `Assets/` | `Reference/Three-FPS`, 261 files inventoried | ✅ **done** |
+| 0.3 | Full feature inventory of the reference | `02-REFERENCE-FEATURE-MAP.md` | ✅ **done** |
+| 0.4 | Audit the Unity project, enumerate defects | `03-CURRENT-STATE-AUDIT.md` (D1–D7) | ✅ **done** |
+| 0.5 | Write the plan | 30 docs in `Docs/plan/` | ✅ **done** |
+| 0.6 | `Tools/setup-headless-browser.sh` | Reproducible browser install | ☐ |
+| 0.7 | `UnityWeb` scaffold + Unity YAML parser + GUID index | Parses `StartMenu.unity` (1,644 docs) | ☐ |
+| 0.8 | Coordinate conversion + unit tests | `Coords.ts`, tests green | ☐ |
+| 0.9 | Scene graph + mesh/material/light/camera + RenderSettings | First lit render of a real scene | ☐ |
+| 0.10 | Headless capture CLI | `npm run shot` → PNG the agent can read | ☐ |
+| 0.11 | Viewer app served for the user | Live preview in the browser | ☐ |
+| 0.12 | `Tools/lint-csharp.mjs` | Gate A operational | ☐ |
+
+---
+
+## Track 1 — Bug fixes (D1–D4, D6)
+
+### 1.1 Kill the bake/purge architecture  → fixes D1, D2, D4
+
+**Delete:**
+- `[ExecuteAlways]` + `OnEnable` + `DeferredBakeMenu` from `CODMainMenu`
+- `DestroyPreview`, `DedupePreview`, `MatchesMenuName`, `PreviewRootNames`
+- `Bootstrap` / `TrySpawn` / `OnSceneLoaded` (the `RuntimeInitializeOnLoadMethod` spawner)
+- `HideLegacyMenu`
+- The `Phase(label, action)` swallow-and-continue wrapper
+
+**Replace with:**
+```csharp
+// Frontend scene contains the real, saved hierarchy.
+// This component BINDS to it. It never creates or destroys menu content.
+public class FrontendController : MonoBehaviour
+{
+    [SerializeField] MenuStage   stage;        // assigned in the Inspector
+    [SerializeField] Canvas      canvas;
+    [SerializeField] OperatorDisplay operatorDisplay;
+    [SerializeField] TabBar      tabBar;
+
+    void Awake()
+    {
+        if (!ValidateWiring()) return;   // logs precisely what's missing, then stops
+        BindTabs(); BindPlayTab(); BindOperators(); BindLoadout();
+    }
+}
+```
+Plus a **one-time, on-demand** editor command `COD / UI / Generate Frontend Scene` that builds the
+hierarchy and saves it. Never automatic.
+
+**Acceptance:** enter Play → exactly one `MenuStage`, one `OperatorDisplay`, one menu `Canvas`;
+an EditMode + PlayMode test asserts the counts; an Inspector edit to a menu object survives Play.
+
+### 1.2 Operator animation + weapon in hand → fixes D3
+- `OperatorDisplay` gets an `Animator` with `Loco_Idle` (generated clip, doc 23 §6) and a subtle
+  idle-fidget.
+- The selected primary is instantiated at `Attach_HandR` / `Grip_R` with correct hand IK.
+- Changing operator or weapon updates in place — no destroy/recreate.
+
+### 1.3 Boot scene + service ownership
+- New `Boot` scene: creates the `DontDestroyOnLoad` service root
+  (`NetworkManager`, `SettingsService`, `InputService`, `AudioManager`), then loads `Frontend`.
+- Remove every scattered `RuntimeInitializeOnLoadMethod` manager spawner.
+- **This is the structural fix for the whole duplicate-spawn class of bugs.**
+
+### 1.4 Adopt `IInputSource` everywhere → fixes D6
+- `PlayerInputSource` completed per doc 08 §4 (deadzone, curves, acceleration, device detection).
+- `Input_Handler`, `CharacterMove`, `WeaponController`, and the new pose drivers read only
+  `InputFrame`.
+- Lint rule enabled; zero banned-token hits.
+
+### 1.5 Assembly definitions
+- Introduce `Contracts` → `Net` → `Sim` → `Presentation` → `UI` → `Editor` in **one** commit
+  (doc 05 §3). Partial adoption creates circular-reference errors.
+
+---
+
+## Track 2 — Tactical sprint rework (D5)
+
+Full spec in `10-TACTICAL-SPRINT-REWORK.md`. Commit sequence:
+
+| # | Commit | Fixes |
+|---|---|---|
+| 2.1 | Move tac-sprint state into `CharacterMove` + `CharacterState`; add `MovementTuning` asset | F5, F7 |
+| 2.2 | Route all input through `IInputSource`; double-tap + hold + off modes | F4 |
+| 2.3 | New `TacSprintPose` asset; `PerspectiveSync` producing one `CompositePose` | — |
+| 2.4 | `ViewmodelPoseDriver` — cached base pose, `LateUpdate`, absolute application, clamp-after-wobble | F1, F2, F3 |
+| 2.5 | `BodyPoseDriver` + `TacSprintUpper` additive layer + `OnAnimatorIK` hands with arm-derived wrists and rig-normalised targets | F6, F8 |
+| 2.6 | Delete `WeaponMovementPose.cs` | — |
+| 2.7 | Harness sequence `tacsprint.json`; iterate against contact sheets until approved | — |
+
+**Gate:** the five acceptance shots in doc 10 §7 rendered, read, and judged good. Hands visible in
+every frame of both transitions.
+
+---
+
+## Track 3 — UI design system + redesigned front-end
+
+| # | Task |
+|---|---|
+| 3.1 | `UIThemeAsset` with every token from doc 20 §3 |
+| 3.2 | Component library (doc 20 §5) — all states, all pad-navigable |
+| 3.3 | `UIScreen` framework + screen stack + global back + shared header/footer |
+| 3.4 | Focus graph system + focus ring + reachability test |
+| 3.5 | PLAY tab (doc 21 §5) |
+| 3.6 | SETTINGS — one component, used by the menu tab **and** the pause menu |
+| 3.7 | OPERATORS + LOADOUT tabs with the live 3D stage |
+| 3.8 | LOBBY + LOADING overlays |
+| 3.9 | BARRACKS + STORE (honest placeholders) |
+| 3.10 | `COD / UI / Audit` enforcement command |
+
+---
+
+## Track 4 — Controller support
+
+| # | Task |
+|---|---|
+| 4.1 | Gamepad bindings for every action (doc 08 §2) |
+| 4.2 | Stick processing: deadzone, exponent, accel, ADS scaling (doc 08 §4) |
+| 4.3 | Aim assist: rotational, slowdown, precision — all input-space (doc 08 §5) |
+| 4.4 | Device detection with hysteresis + glyph swapping |
+| 4.5 | Menu navigation: bumpers, triggers, A/B, hold-to-confirm, auto-scroll |
+| 4.6 | Rebinding UI for both devices with conflict detection |
+| 4.7 | Haptics service |
+
+---
+
+## Track 5 — LAN verification & hardening
+
+The LAN system is reported as mostly working. Tasks:
+
+| # | Task |
+|---|---|
+| 5.1 | Broadcast on all interfaces; directed-probe response; mDNS fallback |
+| 5.2 | Version hash in the beacon + mismatch state in the browser UI |
+| 5.3 | Beacon payload: map, mode, player count, passworded, platform |
+| 5.4 | Reconnect-with-score-intact within 60 s |
+| 5.5 | Clear, actionable failure messages (no silent failures) |
+| 5.6 | `Tools/net-harness` — N simulated clients, convergence + bandwidth assertions |
+
+---
+
+## Commit order
+
+```
+ 1. tooling: setup-headless-browser + lint-csharp
+ 2. unityweb: scaffold + YAML parser + guid index + coords (+tests)
+ 3. unityweb: scene graph + render + capture CLI          ← FIRST SCREENSHOT
+ 4. unityweb: viewer app for the user
+ 5. arch: assembly definitions
+ 6. boot: Boot scene + service root; remove scattered spawners
+ 7. menu: delete bake/purge; FrontendController binds saved scene content   ← D1/D2/D4
+ 8. menu: generate-frontend-scene editor command
+ 9. menu: operator idle animation + weapon attach                          ← D3
+10. input: PlayerInputSource complete; adopt IInputSource everywhere       ← D6
+11. move: tac-sprint state into CharacterMove + MovementTuning             ← F5/F7
+12. anim: PerspectiveSync + TacSprintPose + ViewmodelPoseDriver            ← F1/F2/F3
+13. anim: BodyPoseDriver + additive layer + hand IK; delete WeaponMovementPose ← F6/F8
+14. harness: tacsprint sequence; iterate to approval                       ← D5 closed
+15. ui: theme asset + component library
+16. ui: screen framework + header/footer + focus graph
+17. ui: PLAY / SETTINGS / OPERATORS / LOADOUT / LOBBY / PAUSE
+18. input: gamepad bindings, curves, aim assist, glyphs, menu nav
+19. net: LAN discovery hardening + net harness
+20. docs: update every spec doc with what actually shipped
+```
+
+## Phase 1 exit criteria
+
+- [ ] Enter Play on `Frontend`: **exactly one** operator, animated, holding the selected primary.
+- [ ] Full UI present; every tab functional.
+- [ ] Menu objects are saved scene content; Inspector edits survive Play.
+- [ ] Navigate the entire front-end and start a solo match with **only** a gamepad.
+- [ ] Tac sprint: the five acceptance shots approved; hands visible throughout both transitions;
+      correct in first **and** third person.
+- [ ] Zero banned-token lint hits; `COD / UI / Audit` clean.
+- [ ] LAN: host on one machine, discovered and joined from another; version mismatch handled.
+- [ ] The agent can render any scene in the project headlessly and look at it.
