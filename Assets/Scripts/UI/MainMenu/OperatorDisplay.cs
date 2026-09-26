@@ -72,7 +72,8 @@ public class OperatorDisplay : MonoBehaviour
                 // T-pose defense: if the idle clip failed to bind (missing/renamed
                 // sub-asset), fall back to the gameplay controller frozen grounded.
                 var clips = animator.GetCurrentAnimatorClipInfo(0);
-                if (clips == null || clips.Length == 0 || clips[0].clip == null)
+                if (clips == null || clips.Length == 0 || clips[0].clip == null
+                    || clips[0].clip.name.Contains("T-Pose"))
                 {
                     Debug.LogWarning("OperatorDisplay: menu idle clip missing — falling back to gameplay controller");
                     animator.runtimeAnimatorController = originalController;

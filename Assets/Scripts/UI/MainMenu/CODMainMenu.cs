@@ -63,6 +63,7 @@ public class CODMainMenu : MonoBehaviour
 
             // persistent scene objects: mark the scene dirty so saving keeps them
             UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
+            Debug.Log("[CODMainMenu] editor menu bake complete (build 4) — save the scene to persist it");
         }
         catch (System.Exception e)
         {
@@ -181,6 +182,8 @@ public class CODMainMenu : MonoBehaviour
             CODNetworkManager.ClientError += OnClientError;
         });
         Phase("server discovery", StartBrowserDiscovery);
+
+        Debug.Log("[CODMainMenu] runtime menu build finished (build 4)");
     }
 
     static void Phase(string label, System.Action action)
@@ -363,12 +366,13 @@ public class CODMainMenu : MonoBehaviour
 
     void BuildTabs()
     {
-        BuildPlayTab();
-        BuildOperatorsTab();
-        BuildLoadoutTab();
-        BuildBarracksTab();
-        BuildStoreTab();
-        BuildSettingsTab();
+        // one broken tab must never take the other five down with it
+        Phase("PLAY tab", BuildPlayTab);
+        Phase("OPERATORS tab", BuildOperatorsTab);
+        Phase("LOADOUT tab", BuildLoadoutTab);
+        Phase("BARRACKS tab", BuildBarracksTab);
+        Phase("STORE tab", BuildStoreTab);
+        Phase("SETTINGS tab", BuildSettingsTab);
     }
 
     void BuildSettingsTab()

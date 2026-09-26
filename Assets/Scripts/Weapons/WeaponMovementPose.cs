@@ -36,6 +36,8 @@ public class WeaponMovementPose : MonoBehaviour
     public Vector3 tacOneHandedEulerOffset = new Vector3(35f, 5f, 5f);
 
     [Header("Tac-sprint rules")]
+    [Tooltip("Master switch — tac sprint is disabled for now while animations are polished.")]
+    public bool tacSprintEnabled = false;
     public float doubleTapWindow = 0.35f;
     public float tacSprintDuration = 3.5f;
     public float tacSprintSpeedMultiplier = 1.22f;
@@ -104,6 +106,8 @@ public class WeaponMovementPose : MonoBehaviour
         // tac sprint breaks on: stopping, timer, firing, aiming, melee
         if (tacActive && (!sprinting || Time.time > tacEndTime || InputBindings.Held("fire") || InputBindings.Held("aim")))
             tacActive = false;
+
+        if (!tacSprintEnabled) tacActive = false; // master kill-switch (disabled for now)
 
         // ---------------- blending (never snaps) ----------------
         float sprintTarget = sprinting && !tacActive ? 1f : 0f;
