@@ -2,11 +2,19 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using CodeOfDuty.Character;
 
 public class CharacterMove : MonoBehaviour
 {
     [Header("Components")]
     public CharacterController characterController;
+
+    /// <summary>
+    /// THE authority for what this character is doing. The legacy move-state classes still
+    /// drive physics, but every transition is now reported here, so weapon/aim/traversal code
+    /// can read one source of truth instead of private booleans.
+    /// </summary>
+    public readonly CharacterState characterState = new CharacterState();
     public BodyTurnHandler bodyTurnHandler;
     public Animator animator;
     public Transform directionOrienter;
@@ -32,6 +40,8 @@ public class CharacterMove : MonoBehaviour
             // landing thud for the local player, scaled by fall speed
             if (_isGrounded && NetOwnership.IsLocal(this))
                 CameraShake.Land(velocity.y);
+
+            characterState.IsGrounded = value;
 
             animator.SetBool("isGrounded", value);
 
@@ -109,6 +119,17 @@ public class CharacterMove : MonoBehaviour
         SetState(inAirState);
     }
 
+    /// <summary>Maps a legacy move-state object onto the shared locomotion channel.</summary>
+    LocomotionState ToLocomotion(MoveStateBase state)
+    {
+        if (state == crouchState) return LocomotionState.CrouchIdle;
+        if (state == rollState) return LocomotionState.Slide;
+        if (state == jumpState) return LocomotionState.Jump;
+        if (state == inAirState) return LocomotionState.Air;
+        if (state == standState) return LocomotionState.Idle;
+        return LocomotionState.Idle;
+    }
+
     public void SetState(MoveStateBase state)
     {
         if (currentState != null)
@@ -116,7 +137,9 @@ public class CharacterMove : MonoBehaviour
 
         previousState = currentState;
         currentState = state;
-        
+
+        // report the transition to the single authority (forced: the kit owns the physics)
+        characterState.RequestLocomotion(ToLocomotion(state), "CharacterMove.SetState", true);
 
         bool coliderReduce = currentState == crouchState | currentState == rollState;
         if (colliderSizeChangeCor != null) StopCoroutine(colliderSizeChangeCor);

@@ -6,11 +6,18 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 /// <summary>
-/// The main menu of CODE OF DUTY, built 100% from code on top of the 3D
-/// MenuStage (live operator + weapon preview). Tabbed layout in the style of
-/// modern AAA shooters: top tab bar, big mode cards, operator gallery with
-/// realtime switching, loadout screen, placeholder tabs for future features.
-/// No scene surgery: it injects itself whenever the StartMenu scene loads.
+/// The main menu of CODE OF DUTY. Tabbed layout in the style of modern AAA
+/// shooters: top tab bar, big mode cards, operator gallery with realtime
+/// switching, loadout screen, placeholder tabs for future features.
+///
+/// ## Baked scene objects are the single source of truth
+/// The menu (canvas, tabs, 3D stage) is BAKED into the StartMenu scene as real,
+/// saved GameObjects — visible and editable in edit mode, in play mode, on pause.
+/// <see cref="Start"/> does NOT rebuild anything: it ADOPTS the baked objects and
+/// re-attaches behavior (button listeners, input wiring, discovery) by name,
+/// because C# closures cannot survive a scene save. The build pass is idempotent
+/// find-or-create, so running it at play start is harmless if the bake is already
+/// current — and it self-heals a missing element instead of clobbering edits.
 /// </summary>
 [ExecuteAlways]
 public class CODMainMenu : MonoBehaviour
@@ -18,7 +25,7 @@ public class CODMainMenu : MonoBehaviour
     const string MenuSceneName = "StartMenu";
 
     /// <summary>Root all UI is built under (child object, so editor previews can be swapped cleanly).</summary>
-    Transform uiRoot;
+    [SerializeField] Transform uiRoot;
 
     static bool IsEditMode => !Application.isPlaying;
 
@@ -29,7 +36,8 @@ public class CODMainMenu : MonoBehaviour
     // can be inspected/tweaked there. After every scene open / script recompile
     // the bake is refreshed from the CURRENT code (old copy purged, new copy
     // built in place) so code changes always reflect; save the scene to persist.
-    // At runtime Start() replaces the baked copy with a fully wired live build.
+    // At runtime Start() ADOPTS the baked objects and only re-attaches behavior —
+    // it does not destroy and rebuild them, so scene edits made in play mode stay.
 
 #if UNITY_EDITOR
     void OnEnable()
@@ -70,20 +78,88 @@ public class CODMainMenu : MonoBehaviour
             Debug.LogException(e);
         }
     }
+
+    // ---- Editor tools: diagnose and repair the baked menu scene ----
+
+    [UnityEditor.MenuItem("COD/Main Menu/Diagnose Scene")]
+    static void DiagnoseScene()
+    {
+        var menus = FindObjectsByType<CODMainMenu>(FindObjectsInactive.Include);
+        var stages = FindObjectsByType<MenuStage>(FindObjectsInactive.Include);
+        var displays = FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include);
+        var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
+
+        var report = new System.Text.StringBuilder();
+        report.AppendLine("[CODMainMenu] SCENE DIAGNOSIS (" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + ")");
+        report.AppendLine($"  CODMainMenu instances : {menus.Length}  {(menus.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
+        report.AppendLine($"  MenuStage instances   : {stages.Length}  {(stages.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
+        report.AppendLine($"  OperatorDisplay       : {displays.Length}  {(displays.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
+        report.AppendLine($"  Canvas instances      : {canvases.Length}");
+        foreach (var d in displays)
+            report.AppendLine($"    - '{d.name}' under '{(d.transform.parent != null ? d.transform.parent.name : "ROOT")}'");
+        foreach (var s in stages)
+            report.AppendLine($"    - stage '{s.name}' operatorDisplay={(s.operatorDisplay != null ? s.operatorDisplay.name : "null")}");
+
+        var menu = menus.Length > 0 ? menus[0] : null;
+        if (menu != null)
+            report.AppendLine($"  menu canvas           : {(menu.canvas != null ? menu.canvas.name : "NULL <-- UI WILL BE MISSING")}");
+
+        Debug.Log(report.ToString());
+    }
+
+    [UnityEditor.MenuItem("COD/Main Menu/Repair Scene")]
+    static void RepairScene()
+    {
+        var menu = FindAnyObjectByType<CODMainMenu>();
+        if (menu == null)
+        {
+            Debug.LogError("[CODMainMenu] no CODMainMenu in the open scene — nothing to repair.");
+            return;
+        }
+
+        try
+        {
+            menu.DestroyPreview();   // removes every duplicate/ghost
+            menu.BuildCanvas();
+            menu.BuildTopBar();
+            menu.BuildTabs();
+            menu.SelectTab("PLAY");
+            menu.stage = MenuStage.Create();
+
+            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(menu.gameObject.scene);
+            UnityEditor.SceneManagement.EditorSceneManager.SaveOpenScenes();
+            Debug.Log("[CODMainMenu] repair complete — one operator, one stage, one UI. Scene saved.");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e);
+        }
+    }
 #endif
 
     static readonly string[] PreviewRootNames =
-        { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay" };
+        { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay", "OperatorDisplay", "OperatorModel" };
 
-    /// <summary>Removes preview objects AND any ghosts that leaked to the scene root.</summary>
+    /// <summary>
+    /// Removes preview objects AND any ghosts. Sweeps by name AND by component type, because a
+    /// stale bake can leave an extra MenuStage/OperatorDisplay behind under any name — which is
+    /// exactly how you end up with two operators standing in the menu.
+    /// </summary>
     void DestroyPreview()
     {
+        // 1. UI built under us
         for (int i = transform.childCount - 1; i >= 0; i--)
         {
             var child = transform.GetChild(i);
             if (child.name == "MenuUI") DestroyImmediate(child.gameObject);
         }
 
+        // 2. duplicate CODMainMenu instances (duplicate menu = duplicate bakes)
+        foreach (var other in FindObjectsByType<CODMainMenu>(FindObjectsInactive.Include))
+            if (other != null && other != this)
+                DestroyImmediate(other.gameObject);
+
+        // 3. scene root, by name
         var scene = gameObject.scene;
         if (scene.isLoaded)
         {
@@ -97,10 +173,53 @@ public class CODMainMenu : MonoBehaviour
             }
         }
 
+        // 4. whole scene, by COMPONENT — catches renamed or leftover preview objects
+        foreach (var staleStage in FindObjectsByType<MenuStage>(FindObjectsInactive.Include))
+            if (staleStage != null) DestroyImmediate(staleStage.gameObject);
+        foreach (var staleDisplay in FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include))
+            if (staleDisplay != null) DestroyImmediate(staleDisplay.gameObject);
+
+        stage = null;
+        canvas = null;
         tabButtons.Clear();
         tabPanels.Clear();
         operatorCards.Clear();
         loadoutCards.Clear();
+    }
+
+    /// <summary>
+    /// Runtime safety net: whatever the scene contained, exactly ONE MenuStage and ONE
+    /// OperatorDisplay survive. This is the direct fix for "two characters spawn on play".
+    /// </summary>
+    void DedupePreview()
+    {
+        var stages = FindObjectsByType<MenuStage>(FindObjectsInactive.Include);
+        foreach (var s in stages)
+        {
+            if (s == null || s == stage) continue;
+            Debug.LogWarning($"[CODMainMenu] removing duplicate MenuStage '{s.name}'");
+            Destroy(s.gameObject);
+        }
+
+        OperatorDisplay keep = stage != null ? stage.operatorDisplay : null;
+        var displays = FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include);
+        foreach (var d in displays)
+        {
+            if (d == null || d == keep) continue;
+            Debug.LogWarning($"[CODMainMenu] removing duplicate OperatorDisplay '{d.name}'");
+            Destroy(d.gameObject);
+        }
+
+        // exactly one canvas for the menu
+        var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
+        var menuCanvases = new List<Canvas>();
+        foreach (var c in canvases)
+            if (c.GetComponentInParent<CODMainMenu>() != null) menuCanvases.Add(c);
+        for (int i = 1; i < menuCanvases.Count; i++)
+        {
+            Debug.LogWarning($"[CODMainMenu] removing duplicate menu Canvas '{menuCanvases[i].name}'");
+            Destroy(menuCanvases[i].gameObject);
+        }
     }
 
     #endregion
@@ -118,18 +237,18 @@ public class CODMainMenu : MonoBehaviour
     static void TrySpawn(Scene scene)
     {
         if (scene.name != MenuSceneName) return;
-        if (FindFirstObjectByType<CODMainMenu>() != null) return;
+        if (FindAnyObjectByType<CODMainMenu>() != null) return;
         new GameObject("CODMainMenu").AddComponent<CODMainMenu>();
     }
 
-    MenuStage stage;
-    Canvas canvas;
+    [SerializeField] MenuStage stage;
+    [SerializeField] Canvas canvas;
     CODNetworkDiscovery discovery;
 
-    // tabs
-    readonly List<(string id, Button button, TextMeshProUGUI label, Image underline)> tabButtons = new();
+    // tabs (rebuilt from the baked hierarchy on every startup)
+    readonly List<TabEntry> tabButtons = new();
     readonly Dictionary<string, RectTransform> tabPanels = new();
-    string activeTab;
+    [SerializeField] string activeTab;
 
     // play tab
     TMP_InputField nameInput;
@@ -147,11 +266,33 @@ public class CODMainMenu : MonoBehaviour
     TextMeshProUGUI lobbyTitle;
     Button lobbyStartButton;
 
-    // operators / loadout live state
-    readonly List<(int index, Image frame)> operatorCards = new();
+    // operators / loadout live state (rebuilt from the baked cards on every run)
+    readonly List<OperatorCardEntry> operatorCards = new();
     readonly List<List<(string id, Image frame)>> loadoutCards = new();
     List<List<WeaponDatabase.Entry>> loadoutOptions;
     List<int> loadoutSelection;
+
+    // ---- binding manifest --------------------------------------------------
+    // C# closures do not survive a scene save / play-mode domain reload, so
+    // listeners are re-attached at play start from these descriptors plus the
+    // deterministic names of the baked hierarchy. Nothing is destroyed or
+    // recreated at runtime: play mode adopts exactly what the scene contains.
+
+    [System.Serializable]
+    class TabEntry
+    {
+        public string id;
+        public Button button;
+        public TextMeshProUGUI label;
+        public Image underline;
+    }
+
+    [System.Serializable]
+    class OperatorCardEntry
+    {
+        public int index;
+        public Image highlight;
+    }
 
     void Start()
     {
@@ -167,6 +308,7 @@ public class CODMainMenu : MonoBehaviour
             var manager = CODNetworkManager.EnsureExists();
             discovery = manager != null ? manager.discovery : null;
         });
+        Phase("dedupe preview", DedupePreview);
         Phase("menu UI", () =>
         {
             BuildCanvas();
@@ -205,7 +347,7 @@ public class CODMainMenu : MonoBehaviour
 
     static void HideLegacyMenu()
     {
-        foreach (var canvas in FindObjectsByType<Canvas>(FindObjectsSortMode.None))
+        foreach (var canvas in FindObjectsByType<Canvas>(FindObjectsInactive.Include))
         {
             if (canvas.GetComponentInParent<CODMainMenu>() == null)
                 canvas.gameObject.SetActive(false);

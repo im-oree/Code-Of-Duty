@@ -45,7 +45,7 @@ public class MenuStage : MonoBehaviour
         cam.backgroundColor = new Color(0.02f, 0.025f, 0.03f, 1f);
 
         // hide any legacy menu lights so we fully own the mood
-        foreach (Light light in FindObjectsByType<Light>(FindObjectsSortMode.None))
+        foreach (Light light in FindObjectsByType<Light>(FindObjectsInactive.Include))
         {
             if (light.transform.root != transform.root) light.gameObject.SetActive(false);
         }
