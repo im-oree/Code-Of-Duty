@@ -71,7 +71,7 @@ public class CODMainMenu : MonoBehaviour
 
             // persistent scene objects: mark the scene dirty so saving keeps them
             UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
-            Debug.Log("[CODMainMenu] editor menu bake complete (build 4) — save the scene to persist it");
+            Debug.Log("[CODMainMenu] editor menu bake complete (build 5) — save the scene to persist it");
         }
         catch (System.Exception e)
         {
@@ -138,20 +138,23 @@ public class CODMainMenu : MonoBehaviour
 #endif
 
     static readonly string[] PreviewRootNames =
-        { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay", "OperatorDisplay", "OperatorModel" };
+    { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay", "OperatorDisplay", "OperatorModel", "Panel_" };
 
     /// <summary>
     /// Removes preview objects AND any ghosts. Sweeps by name AND by component type, because a
     /// stale bake can leave an extra MenuStage/OperatorDisplay behind under any name — which is
     /// exactly how you end up with two operators standing in the menu.
     /// </summary>
+    /// <summary>Removes every menu object built by any previous version of this
+    /// code, including baked copies, editor previews, and scene-root ghosts.
+    /// Prefix matching also catches duplicates like "TopBar (1)".</summary>
     void DestroyPreview()
     {
         // 1. UI built under us
         for (int i = transform.childCount - 1; i >= 0; i--)
         {
             var child = transform.GetChild(i);
-            if (child.name == "MenuUI") DestroyImmediate(child.gameObject);
+            if (MatchesMenuName(child.name)) DestroyImmediate(child.gameObject);
         }
 
         // 2. duplicate CODMainMenu instances (duplicate menu = duplicate bakes)
@@ -166,10 +169,7 @@ public class CODMainMenu : MonoBehaviour
             foreach (var root in scene.GetRootGameObjects())
             {
                 if (root == null || root == gameObject) continue;
-                bool ghost = root.name.StartsWith("Panel_");
-                foreach (var name in PreviewRootNames)
-                    if (root.name == name) { ghost = true; break; }
-                if (ghost) DestroyImmediate(root);
+                if (MatchesMenuName(root.name)) DestroyImmediate(root);
             }
         }
 
@@ -222,6 +222,13 @@ public class CODMainMenu : MonoBehaviour
         }
     }
 
+    static bool MatchesMenuName(string name)
+    {
+        foreach (var prefix in PreviewRootNames)
+            if (name.StartsWith(prefix)) return true;
+        return false;
+    }
+
     #endregion
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -246,7 +253,7 @@ public class CODMainMenu : MonoBehaviour
     CODNetworkDiscovery discovery;
 
     // tabs (rebuilt from the baked hierarchy on every startup)
-    readonly List<TabEntry> tabButtons = new();
+    readonly List<(string id, Button button, TextMeshProUGUI label, Image underline)> tabButtons = new();
     readonly Dictionary<string, RectTransform> tabPanels = new();
     [SerializeField] string activeTab;
 
@@ -267,31 +274,17 @@ public class CODMainMenu : MonoBehaviour
     Button lobbyStartButton;
 
     // operators / loadout live state (rebuilt from the baked cards on every run)
-    readonly List<OperatorCardEntry> operatorCards = new();
+    readonly List<(int index, Image frame)> operatorCards = new();
     readonly List<List<(string id, Image frame)>> loadoutCards = new();
     List<List<WeaponDatabase.Entry>> loadoutOptions;
     List<int> loadoutSelection;
 
-    // ---- binding manifest --------------------------------------------------
-    // C# closures do not survive a scene save / play-mode domain reload, so
-    // listeners are re-attached at play start from these descriptors plus the
-    // deterministic names of the baked hierarchy. Nothing is destroyed or
-    // recreated at runtime: play mode adopts exactly what the scene contains.
-
-    [System.Serializable]
-    class TabEntry
+    void Awake()
     {
-        public string id;
-        public Button button;
-        public TextMeshProUGUI label;
-        public Image underline;
-    }
-
-    [System.Serializable]
-    class OperatorCardEntry
-    {
-        public int index;
-        public Image highlight;
+        // earliest possible cleanup: a saved scene may contain baked menu
+        // copies (or ghosts from older versions) — wipe them before anything
+        // else runs so play mode ALWAYS starts from a clean slate.
+        if (!IsEditMode) Phase("awake purge", DestroyPreview);
     }
 
     void Start()
@@ -325,7 +318,7 @@ public class CODMainMenu : MonoBehaviour
         });
         Phase("server discovery", StartBrowserDiscovery);
 
-        Debug.Log("[CODMainMenu] runtime menu build finished (build 4)");
+        Debug.Log("[CODMainMenu] runtime menu build finished (build 5)");
     }
 
     static void Phase(string label, System.Action action)

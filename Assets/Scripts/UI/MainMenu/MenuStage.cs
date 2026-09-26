@@ -15,6 +15,10 @@ public class MenuStage : MonoBehaviour
 
     public static MenuStage Create()
     {
+        // never allow two stages (a stale one may be saved in the scene)
+        foreach (var old in FindObjectsByType<MenuStage>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            DestroyImmediate(old.gameObject);
+
         var stage = new GameObject("MenuStage").AddComponent<MenuStage>();
         stage.Build();
         return stage;
