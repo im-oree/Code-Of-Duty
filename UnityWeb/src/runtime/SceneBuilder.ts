@@ -706,6 +706,13 @@ export class SceneBuilder {
         if (resolved.mesh) {
           geometry = resolved.mesh.geometry;
           modelScale = resolved.importScale;
+          if (resolved.needsModelMatrix) {
+            // The scene transform we are hanging this on does not stand for
+            // the model node the geometry came from, so nothing else will
+            // supply the node's place inside the model. Bake it in here.
+            geometry = geometry.clone();
+            geometry.applyMatrix4(resolved.mesh.modelMatrix);
+          }
           this.report.modelMeshes++;
           if (resolved.strategy === 'stable-index' || resolved.strategy === 'largest-mesh') {
             // Honest about guesses: the fileID -> sub-mesh mapping is not

@@ -490,9 +490,52 @@ function findObjects(needle: string): THREE.Object3D[] {
   return out;
 }
 
+/**
+ * Resolve one scene node from a human-written needle.
+ *
+ * Accepted forms, in the order they are tried:
+ *   "&123456"          a transform or GameObject fileID — always unambiguous
+ *   "A/B/C"            a path; matched against the tail of each node's full
+ *                      path, so "RightHand/N4_Rifle" is enough to pin down the
+ *                      one rifle that hangs off the hand
+ *   "Name"             exact name match, then substring match
+ *
+ * Substring matching is last because it is the one that silently returns the
+ * wrong object (searching "N4_Rifle" finds the UI card "W_N4_Rifle" first).
+ */
 function findNodeInfo(needle: string): NodeInfo | null {
   if (!built) return null;
-  const want = needle.toLowerCase();
+  const raw = needle.trim();
+
+  if (raw.startsWith('&')) {
+    const want = raw.slice(1);
+    let hit: NodeInfo | null = null;
+    const walk = (list: NodeInfo[]) => {
+      for (const n of list) {
+        if (!hit && String(n.fileID) === want) hit = n;
+        walk(n.children);
+      }
+    };
+    walk(built.nodes);
+    return hit;
+  }
+
+  if (raw.includes('/')) {
+    const want = raw.replace(/^\/+/, '').toLowerCase();
+    const segments = want.split('/').length;
+    let hit: NodeInfo | null = null;
+    const walk = (list: NodeInfo[], prefix: string[]) => {
+      for (const n of list) {
+        const path = [...prefix, n.name];
+        if (!hit && path.slice(-segments).join('/').toLowerCase() === want) hit = n;
+        walk(n.children, path);
+      }
+    };
+    walk(built.nodes, []);
+    return hit;
+  }
+
+  const want = raw.toLowerCase();
   let exact: NodeInfo | null = null;
   let partial: NodeInfo | null = null;
   const walk = (list: NodeInfo[]) => {
@@ -575,6 +618,48 @@ const api = {
         properties: c.body,
       })),
       children: node.children.map((c) => c.name),
+    };
+  },
+  /**
+   * Pose of `child` expressed in `parent`'s space, in Unity conventions.
+   *
+   * This is the question rig work actually asks — "where does this grip sit
+   * relative to that hand bone" — and answering it from world positions alone
+   * loses the rotation, which is usually the part that is wrong. `parent` may
+   * be any node, not just an ancestor. With no `parent`, gives the world pose.
+   *
+   * Mirroring note: local matrices are stored three-side as M·A·M, so
+   * inverse(P_world)·C_world is itself mirrored, and one final M·_·M puts the
+   * answer back into Unity's left-handed frame.
+   */
+  relative: (child: string, parent?: string) => {
+    const c = findNodeInfo(child);
+    if (!c) return null;
+    c.object3d.updateWorldMatrix(true, false);
+    let m = c.object3d.matrixWorld.clone();
+    if (parent) {
+      const p = findNodeInfo(parent);
+      if (!p) return null;
+      p.object3d.updateWorldMatrix(true, false);
+      m = new THREE.Matrix4().copy(p.object3d.matrixWorld).invert().multiply(m);
+    }
+    const mirror = new THREE.Matrix4().makeScale(1, 1, -1);
+    const unity = new THREE.Matrix4().multiplyMatrices(mirror, m).multiply(mirror);
+    const pos = new THREE.Vector3();
+    const rot = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    unity.decompose(pos, rot, scl);
+    const euler = new THREE.Euler().setFromQuaternion(rot, 'ZXY');
+    const r4 = (n: number) => +n.toFixed(4);
+    const deg = (n: number) => +((n * 180) / Math.PI).toFixed(2);
+    return {
+      child: c.name,
+      parent: parent ? findNodeInfo(parent)!.name : '(world)',
+      position: pos.toArray().map(r4),
+      rotation: rot.toArray().map(r4),
+      euler: [deg(euler.x), deg(euler.y), deg(euler.z)],
+      scale: scl.toArray().map(r4),
+      distance: r4(pos.length()),
     };
   },
   select: (needle: string) => {
@@ -763,6 +848,14 @@ const api = {
   readAsset: (path: string) => assets.readText(path),
   guidOf: (path: string) => assets.guidForPath(path),
   pathOfGuid: (guid: string) => assets.pathForGuid(guid),
+
+  /* ---- escape hatch ---- */
+  /**
+   * Raw three.js handles for one-off investigation the typed API does not
+   * cover. Returns live objects, so anything read out of here must be reduced
+   * to plain JSON before it crosses the page boundary.
+   */
+  raw: () => ({ THREE, scene: built?.scene ?? null, built }),
 
   /* ---- render ---- */
   renderOnce: () => { drawFrame(); return true; },

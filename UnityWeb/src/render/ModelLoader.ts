@@ -44,6 +44,13 @@ export interface ModelMesh {
   skinned: boolean;
   /** Name of the mesh node inside the model, for locating it in a clone. */
   nodeName: string;
+  /**
+   * The mesh node's transform within the model file, mirrored into three's
+   * frame. Geometry is kept in node-local space (what a Unity Mesh asset
+   * holds), so this is only applied when the consumer has *no* scene node
+   * standing in for this model node — see `ResolvedMesh.needsModelMatrix`.
+   */
+  modelMatrix: THREE.Matrix4;
 }
 
 export interface LoadedModel {
@@ -155,6 +162,13 @@ export interface ResolvedMesh {
   modelPath: string;
   /** Unity's model import scale; apply to static meshes to land in metres. */
   importScale: number;
+  /**
+   * True when the match was a guess, so the scene transform we are about to
+   * hang this geometry on does NOT correspond to the model node it came from.
+   * In that case the caller must apply `ModelMesh.modelMatrix` itself,
+   * because nothing else will supply the node's place inside the model.
+   */
+  needsModelMatrix: boolean;
 }
 
 const modelCache = new Map<string, Promise<LoadedModel | null>>();
@@ -168,23 +182,22 @@ function normalizeName(n: string): string {
     .replace(/(lod\d+|mesh|geo|grp|low|high)$/g, '');
 }
 
-const identity = new THREE.Matrix4();
-
 function collectMeshes(root: THREE.Object3D): ModelMesh[] {
   const out: ModelMesh[] = [];
   root.traverse((child) => {
     const asMesh = child as THREE.Mesh;
     if (!asMesh.isMesh || !asMesh.geometry) return;
 
-    // Bake the node's own transform inside the model file into the geometry.
-    // Unity does this at import time; skipping it loses any scaling or
-    // orientation the artist put on the node rather than the vertices.
+    // Keep vertices in NODE-LOCAL space, which is what a Unity Mesh asset
+    // holds. Unity's importer does not bake a node's place in the model into
+    // its mesh; it rebuilds the node hierarchy as GameObjects and lets those
+    // transforms position the mesh. Baking matrixWorld here instead applied
+    // every offset twice -- once in the vertices and again on the scene
+    // transform -- which blew multi-part props apart along their own axes,
+    // each piece displaced by exactly its own offset from the model root.
     const geometry = (asMesh.geometry as THREE.BufferGeometry).clone();
-    if (!(child as THREE.SkinnedMesh).isSkinnedMesh) {
-      child.updateWorldMatrix(true, false);
-      const local = new THREE.Matrix4().copy(child.matrixWorld);
-      if (!local.equals(identity)) geometry.applyMatrix4(local);
-    }
+    child.updateWorldMatrix(true, false);
+    const modelMatrix = new THREE.Matrix4().copy(child.matrixWorld);
     // Vertex data is still in the source file's handedness; the scene graph
     // around it is not. Mirror here, once, so the two agree.
     mirrorGeometry(geometry);
@@ -196,6 +209,7 @@ function collectMeshes(root: THREE.Object3D): ModelMesh[] {
       vertexCount: geometry.getAttribute('position')?.count ?? 0,
       skinned: false,
       nodeName: child.name || '',
+      modelMatrix: mirrorMatrix(modelMatrix),
     };
 
     const skinned = child as THREE.SkinnedMesh;
@@ -276,22 +290,22 @@ export async function resolveMesh(
   hintName: string,
 ): Promise<ResolvedMesh> {
   const path = assets.pathForGuid(guid);
-  if (!path) return { mesh: null, strategy: 'failed', modelPath: '', importScale: 1 };
+  if (!path) return { mesh: null, strategy: 'failed', modelPath: '', importScale: 1, needsModelMatrix: false };
 
   const model = await loadModel(path);
   if (!model || model.meshes.length === 0) {
-    return { mesh: null, strategy: 'failed', modelPath: path, importScale: 1 };
+    return { mesh: null, strategy: 'failed', modelPath: path, importScale: 1, needsModelMatrix: false };
   }
   const importScale = model.importScale;
 
   const exact = model.byName.get(hintName);
-  if (exact) return { mesh: exact, strategy: 'exact-name', modelPath: path, importScale };
+  if (exact) return { mesh: exact, strategy: 'exact-name', modelPath: path, importScale, needsModelMatrix: false };
 
   const norm = model.byName.get(normalizeName(hintName));
-  if (norm) return { mesh: norm, strategy: 'normalized-name', modelPath: path, importScale };
+  if (norm) return { mesh: norm, strategy: 'normalized-name', modelPath: path, importScale, needsModelMatrix: false };
 
   if (model.meshes.length === 1) {
-    return { mesh: model.meshes[0], strategy: 'only-mesh', modelPath: path, importScale };
+    return { mesh: model.meshes[0], strategy: 'only-mesh', modelPath: path, importScale, needsModelMatrix: true };
   }
 
   // Deterministic last resort: sort fileIDs seen for this model and index into
@@ -303,11 +317,11 @@ export async function resolveMesh(
   if (!seen.includes(key)) { seen.push(key); seen.sort(); }
   const idx = seen.indexOf(key);
   if (idx >= 0 && idx < model.meshes.length) {
-    return { mesh: model.meshes[idx], strategy: 'stable-index', modelPath: path, importScale };
+    return { mesh: model.meshes[idx], strategy: 'stable-index', modelPath: path, importScale, needsModelMatrix: true };
   }
 
   const largest = model.meshes.reduce((a, b) => (b.vertexCount > a.vertexCount ? b : a));
-  return { mesh: largest, strategy: 'largest-mesh', modelPath: path, importScale };
+  return { mesh: largest, strategy: 'largest-mesh', modelPath: path, importScale, needsModelMatrix: true };
 }
 
 const fileIdOrder = new Map<string, string[]>();
