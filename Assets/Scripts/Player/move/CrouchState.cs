@@ -1,0 +1,57 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class CrouchState : MoveStateBase
+{
+    public CrouchState(CharacterMove characterMove) : base(characterMove)
+    {
+    }
+
+    public override void Tick()
+    {
+        var horizontalInput = Input.GetAxis("Horizontal");
+        var verticalInput = Input.GetAxis("Vertical");
+
+        Quaternion moveForward = Quaternion.Euler(0, characterMove.directionOrienter.rotation.eulerAngles.y, 0);
+
+        characterMove.moveVelocity = Vector3.ClampMagnitude(moveForward * Vector3.forward * verticalInput + moveForward * Vector3.right * horizontalInput, 1) * characterMove.crouchSpeed;
+
+        // toggle mode: stand on second press; hold mode: stand on release
+        bool wantsUp = InputBindings.CrouchIsToggle
+            ? InputBindings.Down("crouch")
+            : !InputBindings.Held("crouch");
+        if (wantsUp)
+        {
+            if (!characterMove.CanStandUp())
+            {
+                return;
+            }
+            else
+            {
+                characterMove.SetState(characterMove.standState);
+            }
+        }
+
+        characterController.Move(characterMove.moveVelocity * Time.deltaTime);
+
+        characterMove.bodyTurnHandler.momentaryTurn = horizontalInput + verticalInput > 0;
+
+        characterMove.animator.SetFloat(characterMove.horizontalInputID, horizontalInput);
+        characterMove.animator.SetFloat(characterMove.verticalInputID, verticalInput);
+
+        // foot-sliding prevention: clip speed follows actual ground speed
+        characterMove.SyncLocomotionAnimation(characterMove.moveVelocity.magnitude, characterMove.crouchAnimReferenceSpeed);
+    }
+
+    public override void OnStateExit()
+    {
+        characterMove.animator.SetBool(characterMove.crouchID, false);
+    }
+
+    public override void OnStateEnter()
+    {
+        characterMove.animator.SetBool(characterMove.crouchID, true);
+    }
+
+}
