@@ -97,9 +97,10 @@ npm test     # parser + layout unit tests (Node's runner, type-stripped)
 npm run check  # tsc --noEmit && npm test
 ```
 
-19 tests cover the Unity YAML dialect (escapes, refs, negative fileIDs, stripped
-prefab docs) and uGUI's anchor maths against hand-worked cases. Both suites exist
-because each caught a real bug that rendered plausibly but wrongly.
+35 tests cover the Unity YAML dialect (escapes, refs, negative fileIDs, stripped
+prefab docs), uGUI's anchor maths against hand-worked cases, prefab expansion, and
+the modelling pipeline's geometric invariants. Every suite exists because it caught
+a real bug that rendered plausibly but wrongly.
 
 ## Debugging a scene
 
@@ -115,3 +116,66 @@ npm run shot -- --scene Assets/Scenes/StartMenu.unity --out /tmp/x.png \
 Useful entries on `window.uw`: `report()`, `cameras()`, `hierarchy()`,
 `findObjects(name)`, `frameObject(name)`, `skinInfo()`, `uiStats()`,
 `setUiVisible(bool)`, `setOrphanUi(bool)`, `paintUi()`.
+
+## Modelling
+
+A script-driven modeller that emits Unity-ready GLB assets, so props can be
+authored, reviewed and revised in the same headless loop as everything else
+here — no Editor, no DCC tool, no manual export step.
+
+```bash
+npm run model -- --script models/ammo-crate.model.ts            # build + verify
+npm run model -- --script models/ammo-crate.model.ts --preview  # and render it in a scene
+```
+
+Defaults: writes `Assets/Models/Generated/<name>.glb` plus a `.meta` with a
+stable guid, previews into `Assets/Scenes/StartMenu.unity`, shoots to
+`Artifacts/models/<name>.png`. Override with `--out`, `--into`, `--at x,y,z`,
+`--shot`, `--size WxH`, `--no-verify`.
+
+A model is a plain TypeScript function. Shapes are parametric and edits are
+predicate-driven rather than index-driven, so changing a segment count does not
+invalidate the edits that follow it:
+
+```ts
+export default function build(m: Modeler): void {
+  m.box('Body', { size: { x: 0.86, y: 0.34, z: 0.44 },
+                  segments: { x: 6, y: 2, z: 3 }, pivot: 'base' },
+                { material: { color: palette.olive, roughness: 0.85 } });
+
+  // Reinforcing ribs: pick faces by where they are, not by id.
+  m.extrude('Body', { x: 0, y: 0, z: 0.022 },
+            (c) => Math.abs(c.z) > 0.22 - 1e-4 && Math.abs(c.x) > 0.43 * 0.52);
+}
+```
+
+Everything is authored in **Unity coordinates and metres** — +Y up, +Z forward,
+pivots where a Unity prop expects them. The handedness flip to three.js and back
+out through glTF happens at the boundary, and every build asserts it:
+`toGlbVerified` re-imports the exported GLB and checks sampled vertices of every
+part land within 0.1 mm of where Unity would place them.
+
+### Correctness, and why it is checked this way
+
+Bad geometry does not throw. A reversed face is not an error, it is an invisible
+face, and the first crate this pipeline produced exported cleanly, passed its
+round-trip check, and rendered as an open shell full of holes. So the invariants
+that a render would reveal are asserted directly in `tests/model.test.ts`:
+
+- **Winding.** No primitive states a winding; each face declares the direction it
+  should face and `addFacing` derives the order, so the convention lives in one
+  place instead of being re-guessed per face against a mirrored axis.
+- **Orientation is verified by edge consistency and signed volume**, not by
+  "does this normal point away from the centre". The latter is only true for
+  convex shapes and reports correct geometry as broken as soon as a model grows
+  a rib or a recess.
+- **No allocator padding in shipped assets.** The mesh kernel over-allocates its
+  buffers to twice the size the mesh needs as editing headroom and zero-fills
+  the slack; `buildGeometry` trims to the live prefix so that padding never
+  reaches a `.glb` as origin vertices and degenerate triangles.
+- **Non-finite dimensions throw** instead of producing NaN geometry that is
+  unrenderable and undiagnosable.
+
+The mesh kernel itself is vendored in `vendor/kokraf/` and reached only through
+`src/model/MeshEngine.ts`; see `vendor/kokraf/NOTICE.md` for provenance, the
+licence position, and the kernel behaviours worth knowing about.
