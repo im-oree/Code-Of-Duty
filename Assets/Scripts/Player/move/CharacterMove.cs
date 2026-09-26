@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using CodeOfDuty.Character;
+using CodeOfDuty.Input;
 
 public class CharacterMove : MonoBehaviour
 {
@@ -15,6 +16,28 @@ public class CharacterMove : MonoBehaviour
     /// can read one source of truth instead of private booleans.
     /// </summary>
     public readonly CharacterState characterState = new CharacterState();
+
+    CharacterInput characterInput;
+
+    /// <summary>
+    /// What this character wants to do this frame, whoever is driving it.
+    ///
+    /// Movement states read intent from here instead of from the keyboard, which is the whole
+    /// reason a bot can share their code: a bot writes into a <see cref="BotInputSource"/> and
+    /// travels the identical path, with identical acceleration, identical state transitions and
+    /// identical animation, rather than teleporting along a NavMesh.
+    ///
+    /// Resolved lazily and created on demand, so characters authored before the input seam
+    /// existed keep working without every prefab needing a manual component add.
+    /// </summary>
+    public IInputSource InputSource
+    {
+        get
+        {
+            if (characterInput == null) characterInput = CharacterInput.For(this);
+            return characterInput.Source;
+        }
+    }
     public BodyTurnHandler bodyTurnHandler;
     public Animator animator;
     public Transform directionOrienter;

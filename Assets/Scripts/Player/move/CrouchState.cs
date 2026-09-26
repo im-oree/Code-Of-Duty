@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using CodeOfDuty.Input;
 
 public class CrouchState : MoveStateBase
 {
@@ -10,17 +11,19 @@ public class CrouchState : MoveStateBase
 
     public override void Tick()
     {
-        var horizontalInput = Input.GetAxis("Horizontal");
-        var verticalInput = Input.GetAxis("Vertical");
+        var input = characterMove.InputSource;
+        var horizontalInput = input.Move.x;
+        var verticalInput = input.Move.y;
 
         Quaternion moveForward = Quaternion.Euler(0, characterMove.directionOrienter.rotation.eulerAngles.y, 0);
 
         characterMove.moveVelocity = Vector3.ClampMagnitude(moveForward * Vector3.forward * verticalInput + moveForward * Vector3.right * horizontalInput, 1) * characterMove.crouchSpeed;
 
-        // toggle mode: stand on second press; hold mode: stand on release
+        // Toggle mode: stand on second press. Hold mode: stand on release.
+        // Which one is a player preference rather than a device read, so it stays in settings.
         bool wantsUp = InputBindings.CrouchIsToggle
-            ? InputBindings.Down("crouch")
-            : !InputBindings.Held("crouch");
+            ? input.Pressed(InputActionId.Crouch)
+            : !input.Held(InputActionId.Crouch);
         if (wantsUp)
         {
             if (!characterMove.CanStandUp())

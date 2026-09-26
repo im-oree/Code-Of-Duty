@@ -71,11 +71,34 @@ an EditMode + PlayMode test asserts the counts; an Inspector edit to a menu obje
 - Remove every scattered `RuntimeInitializeOnLoadMethod` manager spawner.
 - **This is the structural fix for the whole duplicate-spawn class of bugs.**
 
-### 1.4 Adopt `IInputSource` everywhere → fixes D6
-- `PlayerInputSource` completed per doc 08 §4 (deadzone, curves, acceleration, device detection).
-- `Input_Handler`, `CharacterMove`, `WeaponController`, and the new pose drivers read only
-  `InputFrame`.
-- Lint rule enabled; zero banned-token hits.
+### 1.4 Adopt `IInputSource` everywhere → fixes D6 — **DONE**
+
+`IInputSource` existed but nothing referenced it, so bots had no way to drive a character.
+It is now the only path intent travels.
+
+- **`CharacterInput`** (new, execution order −100) owns one source per character and ticks it
+  once per frame, before any consumer reads. `CharacterInput.For(component)` is the single
+  resolver, so two components on one body can never bind to two different sources.
+- **`PlayerInputSource`** is the only class in the game that touches a device. Keyboard and
+  mouse route through `InputBindings`, so remapping in Settings still works; the gamepad routes
+  through the Input System (radial deadzone 0.08/0.95, response exponent 1.8). Its duplicate
+  `InputMap` keybinding table was deleted — two registries for "what key is Jump" is a bug
+  waiting to happen.
+- **`BotBrain`** (new, execution order −90) pins when an AI may write, between the edge-clear
+  and the consumers.
+- Converted: `Input_Handler`, `StandState`, `CrouchState`, `RollState`, `BodySlope_Handler`,
+  `GrenadeThrower`, `ViewingResistance`, `WeaponMovementPose`. Movement states reach it via
+  `characterMove.InputSource`.
+- `Player.prefab` now carries `CharacterInput` + `PlayerInputSource` on the root; a spawner
+  turns a body over to AI with `CharacterInput.MakeBotDriven()`.
+- Fixed along the way: `BotInputSource.Press()` left an action held forever (a bot that tapped
+  Jump once would read as holding it for the rest of the match); `BodySlope_Handler` scaled lean
+  by the *previous* frame's wall clearance.
+- **Enforced** by `Tools/verify-input-seam.mjs` — fails the build if a gameplay script reads a
+  device, with a justified allowlist of 7 UI/debug exemptions. Verified to actually fail on an
+  injected violation.
+- Also closes **F4** (tac sprint was gated on `Input.GetAxisRaw("Vertical")`, so a gamepad player
+  could sprint but never tac-sprint).
 
 ### 1.5 Assembly definitions
 - Introduce `Contracts` → `Net` → `Sim` → `Presentation` → `UI` → `Editor` in **one** commit
@@ -160,7 +183,7 @@ The LAN system is reported as mostly working. Tasks:
  7. menu: delete bake/purge; FrontendController binds saved scene content   ← D1/D2/D4
  8. menu: generate-frontend-scene editor command
  9. menu: operator idle animation + weapon attach                          ← D3
-10. input: PlayerInputSource complete; adopt IInputSource everywhere       ← D6
+10. input: PlayerInputSource complete; adopt IInputSource everywhere       ← D6  DONE
 11. move: tac-sprint state into CharacterMove + MovementTuning             ← F5/F7
 12. anim: PerspectiveSync + TacSprintPose + ViewmodelPoseDriver            ← F1/F2/F3
 13. anim: BodyPoseDriver + additive layer + hand IK; delete WeaponMovementPose ← F6/F8

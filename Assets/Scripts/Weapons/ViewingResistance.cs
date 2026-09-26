@@ -1,5 +1,11 @@
 ﻿using UnityEngine;
+using CodeOfDuty.Input;
 
+/// <summary>
+/// Weapon sway: the gun lags behind the view, so whipping the camera around throws the muzzle
+/// off-axis before it settles. Driven by this character's look intent rather than by the mouse,
+/// so a bot's weapon sways exactly like a player's instead of sitting unnaturally rigid.
+/// </summary>
 public class ViewingResistance : MonoBehaviour
 {
     public WeaponController weaponController;
@@ -7,6 +13,8 @@ public class ViewingResistance : MonoBehaviour
     public Transform pivot;
     public float resistanceForce;
     public float resistanceSmoothing;
+
+    CharacterInput characterInput;
 
     private void OnEnable()
     {
@@ -28,15 +36,13 @@ public class ViewingResistance : MonoBehaviour
 
     private void Update()
     {
-        var vertical = -Input.GetAxis("Mouse Y") * resistanceForce;
-        var horizontal = Input.GetAxis("Mouse X") * resistanceForce;
+        if (characterInput == null) characterInput = CharacterInput.For(this);
+
+        Vector2 look = characterInput.Look;
 
         pivot.localRotation = Quaternion.Lerp(
             pivot.localRotation,
-            Quaternion.Euler(
-                -Input.GetAxis("Mouse Y") * resistanceForce,
-                Input.GetAxis("Mouse X") * resistanceForce,
-                0),
-                resistanceSmoothing * Time.deltaTime);
+            Quaternion.Euler(-look.y * resistanceForce, look.x * resistanceForce, 0f),
+            resistanceSmoothing * Time.deltaTime);
     }
 }

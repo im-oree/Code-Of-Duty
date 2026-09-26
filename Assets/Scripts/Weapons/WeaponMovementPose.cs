@@ -1,4 +1,5 @@
 using UnityEngine;
+using CodeOfDuty.Input;
 
 /// <summary>
 /// COD-style procedural weapon handling for movement states — no authored clips needed,
@@ -103,18 +104,25 @@ public class WeaponMovementPose : MonoBehaviour
     Transform CharacterRoot =>
         characterMove != null ? characterMove.transform : transform.root;
 
+    CharacterInput characterInput;
+
     void Update()
     {
         if (!IsLocal || weaponController == null || characterMove == null) return;
 
+        if (characterInput == null) characterInput = CharacterInput.For(this);
+        var input = characterInput.Source;
+
         // ---------------- state detection ----------------
-        bool movingForward = Input.GetAxisRaw("Vertical") > 0.1f;
-        bool sprintHeld = InputBindings.Held("sprint");
+        // Reads intent, not the keyboard: this used to be Input.GetAxisRaw("Vertical"), which
+        // meant a stick-forward player on a gamepad could sprint but could never tac-sprint.
+        bool movingForward = input.Move.y > 0.1f;
+        bool sprintHeld = input.Held(InputActionId.Sprint);
         bool sprinting = sprintHeld && movingForward && characterMove.isGrounded
             && !weaponController.MeleeMode
             && characterMove.currentState == characterMove.standState; // never pose while crouched/sliding
 
-        if (InputBindings.Down("sprint"))
+        if (input.Pressed(InputActionId.Sprint))
         {
             if (InputBindings.TacSprintMode == 0 &&
                 Time.time - lastSprintTap <= doubleTapWindow && movingForward)
@@ -136,7 +144,7 @@ public class WeaponMovementPose : MonoBehaviour
 
         // tac sprint breaks on: stopping, timer, firing, aiming
         if (tacActive && (!sprinting || Time.time > tacEndTime ||
-            InputBindings.Held("fire") || InputBindings.Held("aim")))
+            input.Held(InputActionId.Fire) || input.Held(InputActionId.Aim)))
             tacActive = false;
 
         if (!tacSprintEnabled) tacActive = false;

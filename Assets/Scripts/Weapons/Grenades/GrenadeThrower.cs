@@ -1,5 +1,6 @@
 using FishNet.Object;
 using UnityEngine;
+using CodeOfDuty.Input;
 
 /// <summary>
 /// The grenade LAYER — independent of the 2-weapon loadout. Owner presses the
@@ -17,6 +18,7 @@ public class GrenadeThrower : NetworkBehaviour
 
     float nextThrowTime;
     static GameObject grenadePrefab;
+    CharacterInput characterInput;
 
     void OnEnable()
     {
@@ -29,7 +31,9 @@ public class GrenadeThrower : NetworkBehaviour
         Local = this;
 
         if (PauseMenu.IsOpen) return;
-        if (InputBindings.Down("grenade")) TryThrow();
+
+        if (characterInput == null) characterInput = CharacterInput.For(this);
+        if (characterInput.Pressed(InputActionId.Lethal)) TryThrow();
     }
 
     void TryThrow()

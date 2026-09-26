@@ -13,15 +13,22 @@ public class BodySlope_Handler : MonoBehaviour
     public float targetAngle;
     [SerializeField] private float hitDistance;
 
+    /// <summary>Last lean intent pushed in, kept raw so the collision probe can reuse it.</summary>
+    float leanInput;
+
     public void setInput(float InputAngle)
     {
-        targetAngle = InputAngle * maxSlopeAngle * hitDistance;
+        leanInput = InputAngle;
     }
 
     void LateUpdate()
     {
-        bodySlope.slopeAngle = SmoothValue(bodySlope.slopeAngle, targetAngle, bodySlopeChangeRate);
+        // Probe first, then build the target from this frame's clearance. Previously the probe
+        // ran last, so the lean angle was always scaled by the *previous* frame's wall distance
+        // and the body clipped a corner for one frame on the way in.
         CheckBodyCollision();
+        targetAngle = leanInput * maxSlopeAngle * hitDistance;
+        bodySlope.slopeAngle = SmoothValue(bodySlope.slopeAngle, targetAngle, bodySlopeChangeRate);
     }
 
     private float SmoothValue(float inputValue, float targetvalue, float changeRateValue)
@@ -40,11 +47,13 @@ public class BodySlope_Handler : MonoBehaviour
 
     private void CheckBodyCollision()
     {
-        Debug.DrawLine(playerCameraPosition.position, playerCameraPosition.position + playerCameraPosition.right * (Input.GetAxisRaw("Slope") * 0.51f));
-        if (Physics.Linecast(playerCameraPosition.position, playerCameraPosition.position + playerCameraPosition.right * (Input.GetAxisRaw("Slope") * 0.51f), out RaycastHit raycastHit, collisionMask))
+        // Probe along the lean the character actually asked for, whoever asked for it —
+        // reading the keyboard here would make a leaning bot clip through walls.
+        Vector3 probe = playerCameraPosition.right * (leanInput * 0.51f);
+        Debug.DrawLine(playerCameraPosition.position, playerCameraPosition.position + probe);
+        if (Physics.Linecast(playerCameraPosition.position, playerCameraPosition.position + probe, out RaycastHit raycastHit, collisionMask))
         {
             hitDistance = Mathf.Lerp(0, 1, Vector3.Distance(playerCameraPosition.position, raycastHit.point) / 0.5f);
-            Debug.Log("hitted + " + raycastHit.transform.name);
         }
         else
         {

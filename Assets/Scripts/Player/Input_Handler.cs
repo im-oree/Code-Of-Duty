@@ -1,7 +1,16 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using CodeOfDuty.Input;
 
+/// <summary>
+/// Turns this character's intent into weapon, camera and pose commands.
+///
+/// Reads <see cref="CharacterInput"/>, never a device, so a bot issues the same commands
+/// through the same code. Note that <c>Input</c> here refers to the namespace
+/// <c>CodeOfDuty.Input</c>; the legacy <c>UnityEngine.Input</c> class is deliberately not used
+/// anywhere in this file.
+/// </summary>
 public class Input_Handler : MonoBehaviour
 {
     [SerializeField] private WeaponController weaponController;
@@ -11,10 +20,19 @@ public class Input_Handler : MonoBehaviour
     [SerializeField] private BodyTiltInSprint bodyTiltInSprint;
     [SerializeField] private WeaponSight_hangler weaponSightHandler;
 
+    [Header("Input")]
+    [Tooltip("Resolved from this character if left empty.")]
+    [SerializeField] private CharacterInput characterInput;
+
     [Header("Camera")]
     [SerializeField] private CameraController cameraController;
     [SerializeField] float maxViewAngle = 80;
     [SerializeField] private float sensitivity = 150;
+
+    private void Awake()
+    {
+        if (characterInput == null) characterInput = CharacterInput.For(this);
+    }
 
     private void Start()
     {
@@ -38,61 +56,60 @@ public class Input_Handler : MonoBehaviour
             hudAttached = true;
         }
 
-        TryShoot();
+        var input = characterInput.Source;
 
-        bodySlope_Handler.setInput(-Input.GetAxisRaw("Slope"));
+        TryShoot(input);
 
-        //bodyTiltInSprint.SetMouseXMove(Input.GetAxis("Mouse X"));
+        bodySlope_Handler.setInput(-input.Lean);
 
         // 2-weapon loadout: 1 = primary, 2 = secondary, 3 = melee (unarmed)
-        if (InputBindings.Down("weapon1"))
+        if (input.Pressed(InputActionId.SlotPrimary))
             weaponController.ToChange(1);
-        if (InputBindings.Down("weapon2"))
+        if (input.Pressed(InputActionId.SlotSecondary))
             weaponController.ToChange(2);
-        if (InputBindings.Down("melee"))
+        if (input.Pressed(InputActionId.SlotMelee))
             weaponController.SetMelee(!weaponController.MeleeMode);
 
-
-        if (InputBindings.Down("interact") && weaponPickUp != null)
+        if (input.Pressed(InputActionId.Interact) && weaponPickUp != null)
         {
             weaponPickUp.PickupCheck();
         }
 
-        if (InputBindings.Down("reload") && !weaponController.MeleeMode)
+        if (input.Pressed(InputActionId.Reload) && !weaponController.MeleeMode)
         {
             var current = weaponController.GETCurrentWeapon;
             if (current != null) current.StartReload();
         }
 
-        if (InputBindings.Down("aim"))
+        if (input.Pressed(InputActionId.Aim))
         {
-            //cameraSwitcher.AimViewChange();
             weaponSightHandler.AimViewChange();
         }
-        if (InputBindings.Down("sightSwitch"))
+        if (input.Pressed(InputActionId.SwitchSight))
         {
-            //cameraSwitcher.AimViewChange();
             weaponSightHandler.AimSightChange();
         }
 
-        if (InputBindings.Down("viewToggle"))
+        if (input.Pressed(InputActionId.ToggleView))
         {
             cameraSwitcher.ViewChange();
         }
 
+        // Look arrives as a rate; the camera integrates it against delta time.
         float sens = sensitivity * GameSettings.MouseSensitivity;
-        cameraController.SetCameraRotation(Input.GetAxis("Mouse Y") * -sens, Input.GetAxis("Mouse X") * sens);
+        Vector2 look = input.Look;
+        cameraController.SetCameraRotation(look.y * -sens, look.x * sens);
     }
 
 
     WeaponMovementPose movementPose;
     bool hudAttached;
 
-    void TryShoot()
+    void TryShoot(IInputSource input)
     {
         if (weaponController.MeleeMode)
         {
-            if (InputBindings.Down("fire")) TryMelee();
+            if (input.Pressed(InputActionId.Fire) || input.Pressed(InputActionId.Melee)) TryMelee();
             return;
         }
 
@@ -106,11 +123,11 @@ public class Input_Handler : MonoBehaviour
         if (current == null) return;
 
         bool singleshoot = current.singleShoot;
-        if (singleshoot && InputBindings.Down("fire"))
+        if (singleshoot && input.Pressed(InputActionId.Fire))
         {
             weaponController.StartShoot();
         }
-        else if (!singleshoot && InputBindings.Held("fire"))
+        else if (!singleshoot && input.Held(InputActionId.Fire))
         {
             weaponController.StartShoot();
         }
