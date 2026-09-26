@@ -50,8 +50,18 @@ export interface UnityRef {
 export interface UnityDocument {
   /** Unity class id, e.g. 1 = GameObject, 4 = Transform, 114 = MonoBehaviour. */
   classId: number;
-  /** Local file id (the YAML anchor). Unique within the file. */
+  /**
+   * Local file id (the YAML anchor) in convenient numeric form.
+   * Lossy above 2^53 — use `id` to identify or compare documents.
+   */
   fileID: number;
+  /**
+   * The anchor exactly as written, and the key this document is filed under.
+   * Prefabs routinely use ~19-digit ids: in `Player.prefab` 130 of 350 anchors
+   * exceed 2^53 and 29 pairs/triples collapse onto the same double, so a
+   * numeric map hands back a GameObject where a Transform was asked for.
+   */
+  id: string;
   /** Top-level type name, e.g. "GameObject", "MonoBehaviour". */
   typeName: string;
   /** The document body (the value under `typeName`). */
@@ -62,8 +72,8 @@ export interface UnityDocument {
 
 export interface UnityFile {
   documents: UnityDocument[];
-  /** fileID -> document, for O(1) reference resolution. */
-  byFileID: Map<number, UnityDocument>;
+  /** verbatim fileID -> document, for O(1) lossless reference resolution. */
+  byFileID: Map<string, UnityDocument>;
 }
 
 const DOC_HEADER = /^---\s+!u!(\d+)\s+&(-?\d+)(\s+stripped)?/;
@@ -416,11 +426,11 @@ function parseMappingEntries(lines: Line[], i: number, indent: number, into: Uni
 /** Parse a full Unity YAML file (`.unity`, `.prefab`, `.asset`, `.mat`, ...). */
 export function parseUnityYaml(source: string): UnityFile {
   const documents: UnityDocument[] = [];
-  const byFileID = new Map<number, UnityDocument>();
+  const byFileID = new Map<string, UnityDocument>();
 
   // Split into documents on the `--- !u!N &M` headers.
   const rawLines = source.split('\n');
-  let current: { classId: number; fileID: number; stripped: boolean; start: number } | null = null;
+  let current: { classId: number; fileID: number; id: string; stripped: boolean; start: number } | null = null;
 
   const flush = (endExclusive: number) => {
     if (!current) return;
@@ -437,12 +447,13 @@ export function parseUnityYaml(source: string): UnityFile {
     const doc: UnityDocument = {
       classId: current.classId,
       fileID: current.fileID,
+      id: current.id,
       typeName,
       body: (body && typeof body === 'object' && !Array.isArray(body)) ? (body as UnityMap) : {},
       stripped: current.stripped,
     };
     documents.push(doc);
-    byFileID.set(doc.fileID, doc);
+    byFileID.set(doc.id, doc);
     current = null;
   };
 
@@ -453,6 +464,7 @@ export function parseUnityYaml(source: string): UnityFile {
       current = {
         classId: parseInt(m[1], 10),
         fileID: parseInt(m[2], 10),
+        id: m[2],
         stripped: !!m[3],
         start: i + 1,
       };

@@ -123,7 +123,7 @@ function motionNameOf(
   const ref = asRef(value as never);
   if (!ref) return null;
 
-  const local = file.byFileID.get(ref.fileID);
+  const local = file.byFileID.get(ref.fileIDText);
   if (local) return str(local.body.m_Name, '') || null;
 
   if (ref.guid) pending.push({ set, ref: { guid: ref.guid, fileID: ref.fileIDText } });
@@ -143,7 +143,7 @@ function readConditions(doc: UnityDocument): TransitionCondition[] {
 
 function readTransition(file: UnityFile, doc: UnityDocument): AnimatorTransition {
   const dst = asRef(doc.body.m_DstState);
-  const dstDoc = dst ? file.byFileID.get(dst.fileID) : undefined;
+  const dstDoc = dst ? file.byFileID.get(dst.fileIDText) : undefined;
   return {
     destination: dstDoc ? str(dstDoc.body.m_Name, '') : null,
     conditions: readConditions(doc),
@@ -188,7 +188,7 @@ function readState(
   pending: Array<{ set: (name: string | null) => void; ref: ExternalMotion }>,
 ): AnimatorStateInfo {
   const motionRef = asRef(doc.body.m_Motion);
-  const motionDoc = motionRef ? file.byFileID.get(motionRef.fileID) : undefined;
+  const motionDoc = motionRef ? file.byFileID.get(motionRef.fileIDText) : undefined;
   const isBlendTree = motionDoc?.classId === 206;
 
   const state: AnimatorStateInfo = {
@@ -202,7 +202,7 @@ function readState(
     tag: str(doc.body.m_Tag, ''),
     transitions: arrayOf(doc.body.m_Transitions)
       .map((t) => asRef(t))
-      .map((r) => (r ? file.byFileID.get(r.fileID) : undefined))
+      .map((r) => (r ? file.byFileID.get(r.fileIDText) : undefined))
       .filter((d): d is UnityDocument => !!d)
       .map((d) => readTransition(file, d)),
   };
@@ -241,7 +241,7 @@ export async function loadController(path: string): Promise<AnimatorControllerIn
         const layerMap = mapOf(layerValue);
         if (!layerMap) continue;
         const smRef = asRef(layerMap.m_StateMachine);
-        const sm = smRef ? file.byFileID.get(smRef.fileID) : undefined;
+        const sm = smRef ? file.byFileID.get(smRef.fileIDText) : undefined;
 
         const states: AnimatorStateInfo[] = [];
         let defaultState: string | null = null;
@@ -251,16 +251,16 @@ export async function loadController(path: string): Promise<AnimatorControllerIn
           for (const childValue of arrayOf(sm.body.m_ChildStates)) {
             const childMap = mapOf(childValue);
             const stateRef = asRef(childMap?.m_State);
-            const stateDoc = stateRef ? file.byFileID.get(stateRef.fileID) : undefined;
+            const stateDoc = stateRef ? file.byFileID.get(stateRef.fileIDText) : undefined;
             if (stateDoc) states.push(readState(file, stateDoc, pending));
           }
           const defRef = asRef(sm.body.m_DefaultState);
-          const defDoc = defRef ? file.byFileID.get(defRef.fileID) : undefined;
+          const defDoc = defRef ? file.byFileID.get(defRef.fileIDText) : undefined;
           defaultState = defDoc ? str(defDoc.body.m_Name, '') : null;
 
           for (const t of arrayOf(sm.body.m_AnyStateTransitions)) {
             const r = asRef(t);
-            const d = r ? file.byFileID.get(r.fileID) : undefined;
+            const d = r ? file.byFileID.get(r.fileIDText) : undefined;
             if (d) anyState.push(readTransition(file, d));
           }
         }

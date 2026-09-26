@@ -135,8 +135,32 @@ GameObject:
 Transform:
   m_GameObject: {fileID: 100}
 `);
-  assert.equal(file.byFileID.get(100)?.classId, 1);
-  assert.equal(file.byFileID.get(200)?.classId, 4);
+  assert.equal(file.byFileID.get('100')?.classId, 1);
+  assert.equal(file.byFileID.get('200')?.classId, 4);
+});
+
+test('64-bit fileIDs stay distinct instead of colliding as doubles', () => {
+  // Real ids out of Player.prefab. All three are the same IEEE double, and
+  // they are the GameObject / Transform / component of one object, so a
+  // numeric index silently hands back the wrong one.
+  const file = parseUnityYaml(`--- !u!1 &5217620019972684151
+GameObject:
+  m_Name: Wanted
+--- !u!4 &5217620019972684148
+Transform:
+  m_GameObject: {fileID: 5217620019972684151}
+--- !u!114 &5217620019972684149
+MonoBehaviour:
+  m_GameObject: {fileID: 5217620019972684151}
+`);
+  assert.equal(Number('5217620019972684151'), Number('5217620019972684148'));
+  assert.equal(file.byFileID.size, 3);
+  assert.equal(file.byFileID.get('5217620019972684151')?.classId, 1);
+  assert.equal(file.byFileID.get('5217620019972684148')?.classId, 4);
+  assert.equal(file.byFileID.get('5217620019972684149')?.classId, 114);
+
+  const t = file.byFileID.get('5217620019972684148')!;
+  assert.equal(asRef(t.body.m_GameObject)?.fileIDText, '5217620019972684151');
 });
 
 test('num/str/bool coerce the way Unity fields expect', () => {

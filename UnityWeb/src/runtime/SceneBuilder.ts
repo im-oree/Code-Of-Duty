@@ -26,6 +26,7 @@ import {
 } from '../unity/Coords.ts';
 import { buildMaterial, fallbackMaterial } from '../render/MaterialMapper.ts';
 import { applyRenderSettings } from '../render/Environment.ts';
+import { expandPrefabInstances } from '../unity/PrefabExpander.ts';
 import { resolveMesh, bindToSceneBones, clearModelCache, type ResolveStrategy } from '../render/ModelLoader.ts';
 import {
   type LayoutNode, type Rect, type CanvasScalerSettings,
@@ -35,14 +36,16 @@ import {
 export interface ComponentData {
   classId: number;
   className: string;
-  fileID: number;
+  /** Verbatim Unity anchor. See NodeInfo.fileID. */
+  fileID: string;
   scriptName?: string;
   body: UnityMap;
 }
 
 export interface NodeInfo {
   name: string;
-  fileID: number;
+  /** Verbatim Unity anchor. A string because 64-bit ids do not survive a double. */
+  fileID: string;
   active: boolean;
   layer: number;
   tag: string;
@@ -68,6 +71,10 @@ export interface BuildReport {
   modelMeshes: number;
   skinnedMeshes: number;
   uiWidgets: number;
+  /** PrefabInstance documents assembled into real objects before the build. */
+  prefabInstances: number;
+  /** Documents those instances contributed. */
+  prefabObjects: number;
   warnings: string[];
   unmappedScripts: Map<string, number>;
   /** How each model mesh reference was resolved — see ModelLoader. */
@@ -134,7 +141,7 @@ const BUILTIN_MESHES: Record<number, () => THREE.BufferGeometry> = {
 
 export class SceneBuilder {
   private file!: UnityFile;
-  private docs = new Map<number, UnityDocument>();
+  private docs = new Map<string, UnityDocument>();
   private gameObjectOfComponent = new Map<number, number>();
   private transformOfGameObject = new Map<number, UnityDocument>();
   private objectByFileID = new Map<number, THREE.Object3D>();
@@ -154,12 +161,41 @@ export class SceneBuilder {
   private report: BuildReport = {
     gameObjects: 0, meshes: 0, lights: 0, cameras: 0, canvases: 0,
     modelMeshes: 0, skinnedMeshes: 0, uiWidgets: 0,
+    prefabInstances: 0, prefabObjects: 0,
     warnings: [], unmappedScripts: new Map(), meshResolution: new Map(),
   };
 
   async build(scenePath: string): Promise<BuiltScene> {
     clearModelCache();
     this.file = await assets.readYaml(scenePath);
+
+    // A scene stores prefabs as a single PrefabInstance plus overrides, so the
+    // objects have to be assembled before anything can be read literally.
+    // Idempotent: re-running finds no PrefabInstance left and returns early,
+    // which matters because AssetDatabase caches parsed files.
+    const expansion = await expandPrefabInstances(this.file, async (guid) => {
+      const path = assets.pathForGuid(guid);
+      if (!path) return null;
+      // An imported model is a prefab asset as far as Unity is concerned, but
+      // it is not YAML -- do not hand it to the parser.
+      if (/\.(fbx|obj|gltf|glb|dae|blend)$/i.test(path)) return { kind: 'model', path };
+      const loaded = await assets.readYamlByGuid(guid);
+      return loaded ? { kind: 'prefab', file: loaded.file } : null;
+    });
+    if (expansion.instances > 0) {
+      this.report.prefabInstances = expansion.instances;
+      this.report.prefabObjects = expansion.added;
+    }
+    for (const w of expansion.warnings) this.report.warnings.push(w);
+    if (expansion.modelInstances.length > 0) {
+      const unique = [...new Set(expansion.modelInstances)];
+      this.report.warnings.push(
+        `${expansion.modelInstances.length} model-prefab instance(s) not assembled `
+        + `(objects are synthesised by Unity's importer, not stored in a file): `
+        + unique.join(', '),
+      );
+    }
+
     this.docs = this.file.byFileID;
 
     const scene = new THREE.Scene();
@@ -417,7 +453,7 @@ export class SceneBuilder {
     cameras: CameraInfo[],
   ): Promise<NodeInfo | null> {
     const goRef = asRef(tDoc.body.m_GameObject);
-    const goDoc = goRef ? this.docs.get(goRef.fileID) : undefined;
+    const goDoc = goRef ? this.docs.get(goRef.fileIDText) : undefined;
 
     const name = goDoc ? str(goDoc.body.m_Name, 'GameObject') : 'Transform';
     const active = goDoc ? bool(goDoc.body.m_IsActive, true) : true;
@@ -449,13 +485,13 @@ export class SceneBuilder {
         const m = mapOf(entry);
         const ref = asRef(m?.component);
         if (!ref) continue;
-        const cDoc = this.docs.get(ref.fileID);
+        const cDoc = this.docs.get(ref.fileIDText);
         if (!cDoc) continue;
 
         const data: ComponentData = {
           classId: cDoc.classId,
           className: classNameOf(cDoc.classId),
-          fileID: cDoc.fileID,
+          fileID: cDoc.id,
           body: cDoc.body,
         };
         if (cDoc.classId === 114) {
@@ -481,13 +517,13 @@ export class SceneBuilder {
     for (const entry of arrayOf(tDoc.body.m_Children)) {
       const ref = asRef(entry);
       if (!ref) continue;
-      const child = this.docs.get(ref.fileID);
+      const child = this.docs.get(ref.fileIDText);
       if (!child) continue;
       const node = await this.buildTransform(child, obj, path, cameras);
       if (node) children.push(node);
     }
 
-    return { name, fileID: tDoc.fileID, active, layer, tag, components, object3d: obj, children };
+    return { name, fileID: tDoc.id, active, layer, tag, components, object3d: obj, children };
   }
 
   /**
@@ -568,7 +604,7 @@ export class SceneBuilder {
     for (const entry of arrayOf(goDoc.body.m_Component)) {
       const ref = asRef(mapOf(entry)?.component);
       if (!ref) continue;
-      const c = this.docs.get(ref.fileID);
+      const c = this.docs.get(ref.fileIDText);
       if (c?.classId !== 114) continue;
       if (this.resolveScriptName(c) === 'UnityEngine.UI.CanvasScaler') { scalerBody = c.body; break; }
     }
@@ -693,7 +729,7 @@ export class SceneBuilder {
     for (const entry of arrayOf(goDoc.body.m_Component)) {
       const ref = asRef(mapOf(entry)?.component);
       if (!ref) continue;
-      const c = this.docs.get(ref.fileID);
+      const c = this.docs.get(ref.fileIDText);
       if (c?.classId !== 33) continue;
       const meshRef = asRef(c.body.m_Mesh);
       if (!meshRef) continue;

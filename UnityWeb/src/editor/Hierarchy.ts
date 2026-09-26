@@ -18,8 +18,8 @@ export class HierarchyPane {
   private searchEl: HTMLInputElement;
   private countEl: HTMLElement;
   private nodes: NodeInfo[] = [];
-  private expanded = new Set<number>();
-  private selected: number | null = null;
+  private expanded = new Set<string>();
+  private selected: string | null = null;
   private filter = '';
 
   constructor(private cb: HierarchyCallbacks) {
@@ -41,11 +41,11 @@ export class HierarchyPane {
     this.render();
   }
 
-  select(fileID: number): void {
+  select(fileID: string): void {
     this.selected = fileID;
     // Open every ancestor so the selection is actually on screen.
-    const path: number[] = [];
-    const find = (list: NodeInfo[], trail: number[]): boolean => {
+    const path: string[] = [];
+    const find = (list: NodeInfo[], trail: string[]): boolean => {
       for (const n of list) {
         if (n.fileID === fileID) { path.push(...trail); return true; }
         if (find(n.children, [...trail, n.fileID])) return true;
