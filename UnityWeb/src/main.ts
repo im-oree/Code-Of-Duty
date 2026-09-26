@@ -25,6 +25,8 @@ import { ConsolePane } from './editor/Console.ts';
 import { loadClips } from './anim/ClipLoader.ts';
 import { loadController } from './anim/AnimatorController.ts';
 import { AnimatorInstance, AnimatorSet } from './anim/AnimatorRuntime.ts';
+import { loadModel } from './render/ModelLoader.ts';
+import { toThreePosition, type UVec3 } from './unity/Coords.ts';
 
 /* ------------------------------------------------------------------ */
 /* Elements                                                            */
@@ -561,6 +563,43 @@ const v3 = (v: THREE.Vector3) => v.toArray().map((x) => +x.toFixed(4));
 const api = {
   /* ---- scene ---- */
   loadScene: (path: string) => loadScene(path),
+
+  /**
+   * Drop a model file into the scene that is already loaded.
+   *
+   * This is how the modeller (`src/model/`) is previewed: an asset is judged
+   * next to real Unity content, under the scene's own lighting and sky and
+   * through the same axis conversion, rather than in an isolated viewer where
+   * a scale or handedness mistake looks fine. Position is Unity-space metres.
+   */
+  addModel: async (path: string, options: { position?: UVec3; name?: string } = {}) => {
+    if (!built) return null;
+    const model = await loadModel(path);
+    if (!model) return { ok: false, error: `could not load ${path}` };
+
+    const holder = new THREE.Group();
+    holder.name = options.name ?? path.split('/').pop() ?? 'Model';
+    const instance = model.root.clone(true);
+    instance.scale.multiplyScalar(model.importScale);
+    holder.add(instance);
+    if (options.position) toThreePosition(options.position, holder.position);
+    // Parent under the scene root, not the raw three scene: that is what
+    // findObjects/frameObject/hierarchy traverse, so the preview behaves like
+    // any other scene object instead of an invisible extra.
+    built.root.add(holder);
+
+    const bounds = new THREE.Box3().setFromObject(holder);
+    const size = bounds.getSize(new THREE.Vector3());
+    drawFrame();
+    return {
+      ok: true,
+      name: holder.name,
+      importScale: model.importScale,
+      meshes: model.meshes.length,
+      // Unity-space extents, so "is this weapon the right size" is answerable.
+      sizeMetres: [+size.x.toFixed(4), +size.y.toFixed(4), +size.z.toFixed(4)],
+    };
+  },
   listScenes: async () => (await assets.listFiles('.unity')),
   report: () => {
     if (!built) return null;

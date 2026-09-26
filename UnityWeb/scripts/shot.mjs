@@ -42,6 +42,7 @@ function parseArgs(argv) {
     else if (a === '--no-ui') out.noUi = true;
     else if (a === '--frame') out.frame = next();
     else if (a === '--eval') out.evals = [...(out.evals ?? []), next()];
+    else if (a === '--pre-eval') out.preEvals = [...(out.preEvals ?? []), next()];
     else if (a === '--no-orphan') out.noOrphan = true;
     else if (a === '--no-gizmos') out.noGizmos = true;
     else if (a === '--wire') out.wire = true;
@@ -103,7 +104,9 @@ Inspection
   --select <name>          select an object (shown in the Inspector)
   --inspect <name>         print an object's full component dump (repeatable)
   --dump-ui                print the solved UI layout rects
-  --eval "<js>"            evaluate an expression on the page (repeatable)
+  --eval "<js>"            evaluate an expression after capture, and report it (repeatable)
+  --pre-eval "<js>"        evaluate an expression before framing/capture, for
+                           scene mutation such as uw.addModel (repeatable, awaited)
 `.trim();
 
 const args = parseArgs(process.argv.slice(2));
@@ -252,6 +255,18 @@ async function capture() {
     await page.evaluate(([t, w]) => window.uw.setAnimNormalized(t, w ?? undefined),
                         [args.animTime, args.animTarget ?? null]);
     console.log(`[anim] frozen at normalised t=${args.animTime}`);
+  }
+
+  // Mutating probes: anything that changes the scene has to land before the
+  // camera is framed and before the screenshot, unlike the --eval reporters.
+  for (const expr of args.preEvals ?? []) {
+    try {
+      const value = await page.evaluate(`(async () => (${expr}))()`);
+      console.log(`[pre-eval] ${expr} =>`, JSON.stringify(value));
+    } catch (err) {
+      console.log(`[pre-eval] ${expr} => ERROR ${err.message}`);
+      process.exitCode = 1;
+    }
   }
 
   // Frame the whole scene, or one named object, before any manual orbit.
