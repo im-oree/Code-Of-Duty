@@ -13,6 +13,8 @@
 import { parseUnityYaml, type UnityFile } from './YamlParser.ts';
 
 export class AssetDatabase {
+  /** guid -> (fileID -> sub-asset name), parsed lazily from model .meta files. */
+  private subAssetNames = new Map<string, Map<string, string>>();
   private guidToPath = new Map<string, string>();
   private pathToGuid = new Map<string, string>();
   private textCache = new Map<string, string>();
@@ -81,6 +83,39 @@ export class AssetDatabase {
   }
 
   /** Parse (and cache) a Unity YAML asset by GUID. Returns null if unknown. */
+  /**
+   * Name of a sub-asset inside an imported model, by its fileID.
+   *
+   * A `.controller` refers to an animation take as `{fileID, guid}` where the
+   * GUID names the FBX and the fileID names the take inside it. That fileID is
+   * an import-time hash — it cannot be recomputed, only looked up. Unity writes
+   * the lookup table into the model's `.meta` as `internalIDToNameTable`.
+   *
+   * Without this the motion can only be guessed at, and a guess that lands on
+   * the wrong idle is invisible: the character still stands there breathing.
+   */
+  async subAssetName(guid: string, fileID: string): Promise<string | null> {
+    let table = this.subAssetNames.get(guid);
+    if (!table) {
+      table = new Map<string, string>();
+      const path = this.pathForGuid(guid);
+      if (path) {
+        try {
+          const meta = await this.readText(`${path}.meta`);
+          // - first:
+          //     74: -7185260672609620512
+          //   second: Root|Aim_C_Idle
+          const re = /first:\s*\n\s*\d+:\s*(-?\d+)\s*\n\s*second:[ \t]*(.*)/g;
+          for (let m = re.exec(meta); m; m = re.exec(meta)) {
+            table.set(m[1], m[2].trim());
+          }
+        } catch { /* no .meta, or unreadable */ }
+      }
+      this.subAssetNames.set(guid, table);
+    }
+    return table.get(fileID) ?? null;
+  }
+
   async readYamlByGuid(guid: string | undefined): Promise<{ file: UnityFile; path: string } | null> {
     const path = this.pathForGuid(guid);
     if (!path) return null;

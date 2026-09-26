@@ -155,3 +155,35 @@ GameObject:
   assert.equal(num(b.missing, 7), 7);
   assert.equal(str(b.e), 'hello');
 });
+
+test('64-bit sub-asset fileIDs survive as text', () => {
+  // The model importer generates ~19-digit ids for meshes and animation takes.
+  // As a JS number 5064163649270948430 becomes ...949000, which then fails to
+  // match the model's internalIDToNameTable and silently selects nothing.
+  const file = parseUnityYaml([
+    '%YAML 1.1',
+    '--- !u!1102 &1102001',
+    'AnimatorState:',
+    '  m_Name: MenuIdle',
+    '  m_Motion: {fileID: 5064163649270948430, guid: 0ab042ede6df83a4cae288f199b749f2, type: 3}',
+  ].join('\n'));
+
+  const ref = asRef(file.documents[0].body.m_Motion);
+  assert.ok(ref);
+  assert.equal(ref.fileIDText, '5064163649270948430');
+  assert.equal(ref.guid, '0ab042ede6df83a4cae288f199b749f2');
+  // The numeric form is documented as lossy; prove it so nobody "simplifies"
+  // fileIDText away later.
+  assert.notEqual(String(ref.fileID), ref.fileIDText);
+});
+
+test('small fileIDs still round-trip as text', () => {
+  const file = parseUnityYaml([
+    '--- !u!4 &900000002',
+    'Transform:',
+    '  m_Father: {fileID: 1879613636}',
+    '  m_Root: {fileID: 0}',
+  ].join('\n'));
+  assert.equal(asRef(file.documents[0].body.m_Father)?.fileIDText, '1879613636');
+  assert.equal(asRef(file.documents[0].body.m_Root)?.fileIDText, '0');
+});

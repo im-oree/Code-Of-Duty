@@ -37,6 +37,8 @@ export interface AnimatorInstanceInfo {
   applyRootMotion: boolean;
   /** Node whose baked translation was discarded, when root motion is off. */
   rootMotionStrippedFrom: string | null;
+  /** How the default state resolved to a clip, and whether it was guessed. */
+  defaultResolution: string | null;
 }
 
 export class AnimatorInstance {
@@ -46,6 +48,8 @@ export class AnimatorInstance {
   private currentName: string | null = null;
   private speed = 1;
   paused = false;
+  /** How the default state was resolved, guesses included. */
+  defaultResolution: string | null = null;
 
   /** Name of the topmost animated node, if root motion had to be stripped. */
   readonly rootMotionNode: string | null = null;
@@ -204,14 +208,40 @@ export class AnimatorInstance {
   }
 
   /** Play the controller's default state, if it maps to a clip we have. */
+  /**
+   * Start the controller's default state.
+   *
+   * How this resolved is recorded rather than hidden. A guessed clip looks
+   * exactly like a correct one — the character stands there breathing either
+   * way — so the only way to notice the controller was misread is to say so.
+   */
   playDefault(): boolean {
     const layer = this.controller?.layers[0];
-    if (layer?.defaultState && this.play(layer.defaultState, { loop: true })) return true;
-    // No controller, or its default does not resolve: an idle-looking clip is a
-    // better first impression than a T-pose, and the report says which was used.
+    const state = layer?.defaultState
+      ? layer.states.find((s) => s.name === layer.defaultState)
+      : undefined;
+
+    if (state?.motionName) {
+      const clip = this.clips.find((c) => c.name === state.motionName);
+      if (clip) {
+        this.defaultResolution = `state "${state.name}" -> clip "${clip.name}"`;
+        return this.play(clip.name, { loop: state.loop, speed: state.speed });
+      }
+      this.defaultResolution =
+        `state "${state.name}" names motion "${state.motionName}", which is not a clip in this model`;
+    } else if (layer?.defaultState) {
+      this.defaultResolution = `state "${layer.defaultState}" has no resolvable motion`;
+    } else {
+      this.defaultResolution = 'no controller';
+    }
+
+    // Falling back is better than a T-pose, but it is a guess and is labelled.
     const idle = this.clips.find((c) => /idle|stand|rest/i.test(c.name));
-    if (idle) return this.play(idle.name, { loop: true });
-    return this.clips.length > 0 ? this.play(this.clips[0].name, { loop: true }) : false;
+    const pick = idle ?? this.clips[0];
+    if (!pick) return false;
+    this.defaultResolution += ` — guessed "${pick.name}"`;
+    console.warn(`[animator] ${this.path}: ${this.defaultResolution}`);
+    return this.play(pick.name, { loop: true });
   }
 
   info(): AnimatorInstanceInfo {
@@ -236,6 +266,7 @@ export class AnimatorInstance {
       paused: this.paused,
       applyRootMotion: this.applyRootMotion,
       rootMotionStrippedFrom: this.rootMotionNode,
+      defaultResolution: this.defaultResolution,
     };
   }
 }

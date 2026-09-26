@@ -29,7 +29,20 @@ export interface UnityMap { [key: string]: UnityValue }
 
 /** A Unity file reference: `{fileID: N}` or `{fileID: N, guid: G, type: T}`. */
 export interface UnityRef {
+  /**
+   * Convenient numeric form. Lossy above 2^53 — sub-asset ids inside imported
+   * models routinely exceed that, so compare with `fileIDText`, not this.
+   */
   fileID: number;
+  /**
+   * The id exactly as written. Unity fileIDs are signed 64-bit, and the ones
+   * the model importer generates for meshes and animation takes are ~19 digits:
+   * `5064163649270948430` becomes `5064163649270949000` as a JavaScript number.
+   * That kind of corruption does not throw — it just fails to match the entry
+   * in the model's `internalIDToNameTable`, and the caller quietly falls back
+   * to the wrong asset.
+   */
+  fileIDText: string;
   guid?: string;
   type?: number;
 }
@@ -65,6 +78,8 @@ export function asRef(v: UnityValue | undefined): UnityRef | null {
   const m = v as UnityMap;
   return {
     fileID: num(m.fileID, 0),
+    // The parser keeps long digit runs as strings precisely so this survives.
+    fileIDText: typeof m.fileID === 'string' ? m.fileID.trim() : String(num(m.fileID, 0)),
     guid: typeof m.guid === 'string' ? m.guid : undefined,
     type: m.type !== undefined ? num(m.type, 0) : undefined,
   };
@@ -188,9 +203,14 @@ function parseScalar(raw: string): UnityValue {
   if (/^[0-9a-fA-F]{32}$/.test(s)) return s;
 
   // Numbers. Unity writes plain decimals, exponents and `inf`/`-inf`.
-  // An exponent is only honoured alongside a decimal point or a short mantissa,
-  // so long digit runs (hashes, fileIDs) are never mistaken for floats.
-  if (/^-?(?:\d{1,15}\.?\d*|\.\d+)(?:[eE][-+]?\d{1,3})?$/.test(s)) {
+  //
+  // The digit run is capped at 15 so long integers stay strings: Unity fileIDs
+  // are signed 64-bit and the model importer's are ~19 digits, which a double
+  // cannot hold. The cap only helps if the fractional part is gated behind an
+  // actual decimal point — `\d{1,15}\.?\d*` happily matches all 19 digits of
+  // 5064163649270948430 by treating the last four as the fraction of a number
+  // with no point in it, which is how that id turned into ...949000.
+  if (/^-?(?:\d{1,15}(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d{1,3})?$/.test(s)) {
     const n = parseFloat(s);
     if (Number.isFinite(n)) return n;
   }

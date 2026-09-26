@@ -101,22 +101,32 @@ const PARAM_TYPES: Record<number, ParameterType> = {
   1: 'float', 3: 'int', 4: 'bool', 9: 'trigger',
 };
 
-/** Resolve a `{fileID}` inside this file, or a clip name from an external ref. */
-function motionNameOf(file: UnityFile, value: unknown): string | null {
+/** An animation take inside an imported model, named only by `{guid, fileID}`. */
+interface ExternalMotion { guid: string; fileID: string; }
+
+/**
+ * Resolve a `{fileID}` inside this file, or flag it for external lookup.
+ *
+ * A motion is either a BlendTree living in the controller itself, or a take
+ * inside a model file. The second kind carries no name — just a GUID for the
+ * model and an import-time hash for the take — so it has to be resolved
+ * asynchronously against the model's `.meta`. Returning a placeholder and
+ * letting the runtime "find something close" is how a controller ends up
+ * silently playing the wrong idle.
+ */
+function motionNameOf(
+  file: UnityFile,
+  value: unknown,
+  pending: Array<{ set: (name: string | null) => void; ref: ExternalMotion }>,
+  set: (name: string | null) => void,
+): string | null {
   const ref = asRef(value as never);
   if (!ref) return null;
 
-  // Internal: a BlendTree lives in the same file.
   const local = file.byFileID.get(ref.fileID);
   if (local) return str(local.body.m_Name, '') || null;
 
-  // External: a clip inside an FBX. The GUID names the model; the fileID names
-  // the take. We cannot resolve the take without the model loaded, so record
-  // the path and let the runtime match by index or name.
-  if (ref.guid) {
-    const p = assets.pathForGuid(ref.guid);
-    if (p) return `${p.split('/').pop()}#${ref.fileID}`;
-  }
+  if (ref.guid) pending.push({ set, ref: { guid: ref.guid, fileID: ref.fileIDText } });
   return null;
 }
 
@@ -145,17 +155,23 @@ function readTransition(file: UnityFile, doc: UnityDocument): AnimatorTransition
   };
 }
 
-function readBlendTree(file: UnityFile, doc: UnityDocument): BlendTreeInfo {
+function readBlendTree(
+  file: UnityFile,
+  doc: UnityDocument,
+  pending: Array<{ set: (name: string | null) => void; ref: ExternalMotion }>,
+): BlendTreeInfo {
   const children: BlendTreeChild[] = arrayOf(doc.body.m_Childs).map((c) => {
     const m = mapOf(c);
     const pos = mapOf(m?.m_Position);
-    return {
-      motionName: motionNameOf(file, m?.m_Motion),
+    const child: BlendTreeChild = {
+      motionName: null,
       threshold: num(m?.m_Threshold, 0),
       positionX: num(pos?.x, 0),
       positionY: num(pos?.y, 0),
       timeScale: num(m?.m_TimeScale, 1),
     };
+    child.motionName = motionNameOf(file, m?.m_Motion, pending, (n) => { child.motionName = n; });
+    return child;
   });
   return {
     name: str(doc.body.m_Name, 'Blend Tree'),
@@ -166,15 +182,19 @@ function readBlendTree(file: UnityFile, doc: UnityDocument): BlendTreeInfo {
   };
 }
 
-function readState(file: UnityFile, doc: UnityDocument): AnimatorStateInfo {
+function readState(
+  file: UnityFile,
+  doc: UnityDocument,
+  pending: Array<{ set: (name: string | null) => void; ref: ExternalMotion }>,
+): AnimatorStateInfo {
   const motionRef = asRef(doc.body.m_Motion);
   const motionDoc = motionRef ? file.byFileID.get(motionRef.fileID) : undefined;
   const isBlendTree = motionDoc?.classId === 206;
 
-  return {
+  const state: AnimatorStateInfo = {
     name: str(doc.body.m_Name, 'State'),
-    motionName: isBlendTree ? null : motionNameOf(file, doc.body.m_Motion),
-    blendTree: isBlendTree && motionDoc ? readBlendTree(file, motionDoc) : null,
+    motionName: null,
+    blendTree: isBlendTree && motionDoc ? readBlendTree(file, motionDoc, pending) : null,
     speed: num(doc.body.m_Speed, 1),
     cycleOffset: num(doc.body.m_CycleOffset, 0),
     mirror: num(doc.body.m_Mirror, 0) !== 0,
@@ -186,6 +206,11 @@ function readState(file: UnityFile, doc: UnityDocument): AnimatorStateInfo {
       .filter((d): d is UnityDocument => !!d)
       .map((d) => readTransition(file, d)),
   };
+  if (!isBlendTree) {
+    state.motionName =
+      motionNameOf(file, doc.body.m_Motion, pending, (n) => { state.motionName = n; });
+  }
+  return state;
 }
 
 /** Parse an AnimatorController asset. Cached per path. */
@@ -195,6 +220,7 @@ export async function loadController(path: string): Promise<AnimatorControllerIn
   let info: AnimatorControllerInfo | null = null;
   try {
     const file = await assets.readYaml(path);
+    const pending: Array<{ set: (name: string | null) => void; ref: ExternalMotion }> = [];
     const controllerDoc = file.documents.find((d) => d.classId === 91);
     if (controllerDoc) {
       const parameters: AnimatorParameter[] = arrayOf(controllerDoc.body.m_AnimatorParameters)
@@ -226,7 +252,7 @@ export async function loadController(path: string): Promise<AnimatorControllerIn
             const childMap = mapOf(childValue);
             const stateRef = asRef(childMap?.m_State);
             const stateDoc = stateRef ? file.byFileID.get(stateRef.fileID) : undefined;
-            if (stateDoc) states.push(readState(file, stateDoc));
+            if (stateDoc) states.push(readState(file, stateDoc, pending));
           }
           const defRef = asRef(sm.body.m_DefaultState);
           const defDoc = defRef ? file.byFileID.get(defRef.fileID) : undefined;
@@ -247,6 +273,17 @@ export async function loadController(path: string): Promise<AnimatorControllerIn
           anyStateTransitions: anyState,
         });
       }
+
+      // Resolve every external motion against its model's internalIDToNameTable.
+      await Promise.all(pending.map(async ({ set, ref }) => {
+        const name = await assets.subAssetName(ref.guid, ref.fileID);
+        if (name) { set(name); return; }
+        const model = assets.pathForGuid(ref.guid)?.split('/').pop() ?? ref.guid;
+        console.warn(
+          `[animator] ${path}: motion ${ref.fileID} in ${model} is not in its ` +
+          `internalIDToNameTable — the take cannot be identified`,
+        );
+      }));
 
       const clips = new Set<string>();
       for (const l of layers) {
