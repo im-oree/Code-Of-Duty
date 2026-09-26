@@ -66,6 +66,30 @@ meshes, prefab instances, uGUI widget layout, particles, post-processing.
 **Standing rule: the harness is wrong until proven otherwise.** When it disagrees with the Unity
 Editor, log the case in `DIVERGENCES.md` and fix the harness.
 
+## The editor shell
+
+Opening the page gives you a Unity-shaped editor rather than a bare canvas:
+
+- **Hierarchy** — the real scene graph, with per-type icons, search, and the
+  inactive/active state Unity shows. Selecting a row drives the Inspector.
+- **Inspector** — every component on the selected GameObject with its actual
+  serialised fields, GUID references resolved to asset paths, and world position
+  printed in both Unity's left-handed and three.js's right-handed coordinates so
+  a mismatch is visible instead of inferred.
+- **Project** — the whole `Assets/` **and `Packages/`** tree, served straight
+  from disk. Text assets (`.mat`, `.controller`, `.cs`, `.unity`) show their
+  source, which is usually faster than opening a file to answer "what is
+  actually in this thing".
+- **Console** — scene-build warnings, so problems surface where you are looking.
+- **Scene / Game tabs** — free orbit camera versus the scene's own camera at its
+  own FOV. The two disagreeing is itself a finding.
+
+Toolbar toggles: `UI`, `Orphan UI` (UI with no Canvas ancestor — see F1 in
+DIVERGENCES.md), `Gizmos`, `Wire`, plus FOV and Frame.
+
+`?clean=1` strips the chrome for pure-viewport captures, which is what
+`npm run shot` uses by default.
+
 ## Testing
 
 ```bash

@@ -42,15 +42,74 @@ function parseArgs(argv) {
     else if (a === '--no-ui') out.noUi = true;
     else if (a === '--frame') out.frame = next();
     else if (a === '--eval') out.evals = [...(out.evals ?? []), next()];
+    else if (a === '--no-orphan') out.noOrphan = true;
+    else if (a === '--no-gizmos') out.noGizmos = true;
+    else if (a === '--wire') out.wire = true;
+    else if (a === '--fov') out.fov = Number(next());
+    else if (a === '--look') out.look = next().split(',').map(Number);
+    else if (a === '--select') out.select = next();
+    else if (a === '--anim') out.anim = next();
+    else if (a === '--anim-target') out.animTarget = next();
+    else if (a === '--anim-time') out.animTime = Number(next());
+    else if (a === '--anim-speed') out.animSpeed = Number(next());
+    else if (a === '--advance') out.advance = Number(next());
+    else if (a === '--list-anims') out.listAnims = true;
+    else if (a === '--inspect') out.inspect = [...(out.inspect ?? []), next()];
+    else if (a === '--dump-ui') out.dumpUi = true;
+    else if (a === '--json') out.json = next();
+    else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
 }
 
+const USAGE = `
+Unity Web Clone — headless capture and inspection.
+
+  npm run shot -- --scene <path> [options]
+
+Scene / output
+  --scene <Assets/...>     scene to open (required)
+  --out <file.png>         screenshot path (default ../Artifacts/<scene>.png)
+  --size WxH               viewport size (default 1280x720)
+  --wait <ms>              settle time before capture (default 1200)
+  --chrome                 keep the full editor UI in the shot
+  --overlay                keep the corner overlay when --chrome is off
+  --port <n>               dev server port (default 5180)
+  --keep-server            leave vite running afterwards
+  --json <file.json>       write the full report (scene + anim + ui) to a file
+
+Camera
+  --camera <name|orbit>    pick a scene camera, or the free orbit camera
+  --orbit y,p,d[,tx,ty,tz] orbit yaw/pitch/distance and target
+  --look fx,fy,fz,tx,ty,tz place the camera at f, aimed at t (three coords)
+  --frame <name|''>        frame an object (empty string = whole scene)
+  --fov <deg>              override the active camera's vertical FOV
+
+View
+  --no-ui                  hide the uGUI layer
+  --no-orphan              hide UI that has no Canvas ancestor
+  --no-gizmos              hide grid and light markers
+  --wire                   wireframe every material
+
+Animation
+  --list-anims             print animators, clips and controller states
+  --anim <clip|state>      play a clip or controller state
+  --anim-target <name>     which animator (default: the first one)
+  --anim-time <0..1>       freeze at a normalised position in the clip
+  --anim-speed <x>         playback speed
+  --advance <seconds>      step the animation forward before capturing
+
+Inspection
+  --select <name>          select an object (shown in the Inspector)
+  --inspect <name>         print an object's full component dump (repeatable)
+  --dump-ui                print the solved UI layout rects
+  --eval "<js>"            evaluate an expression on the page (repeatable)
+`.trim();
+
 const args = parseArgs(process.argv.slice(2));
-if (!args.scene) {
-  console.error('usage: shot --scene Assets/Scenes/X.unity [--out out.png] [--camera name|orbit] ' +
-                '[--orbit yaw,pitch,dist] [--size WxH]');
-  process.exit(2);
+if (args.help || !args.scene) {
+  console.log(USAGE);
+  process.exit(args.help ? 0 : 2);
 }
 const outPath = path.resolve(WEB_ROOT, args.out ?? `../Artifacts/${path.basename(args.scene, '.unity')}.png`);
 
@@ -129,15 +188,70 @@ async function capture() {
     return;
   }
 
-  // Arbitrary probes against the live page — the fastest way to diagnose a
-  // scene without adding one-off code to the viewer.
-  for (const expr of args.evals ?? []) {
-    try {
-      const value = await page.evaluate(`(() => (${expr}))()`);
-      console.log(`[eval] ${expr} =>`, JSON.stringify(value, null, 2));
-    } catch (err) {
-      console.log(`[eval] ${expr} => ERROR ${err.message}`);
+  if (args.orbit) {
+    const [yaw, pitch, dist, tx = 0, ty = 1.2, tz = 0] = args.orbit;
+    await page.evaluate(
+      ([y, p, d, x, yy, z]) => window.uw.setOrbit(y, p, d, x, yy, z),
+      [yaw, pitch, dist, tx, ty, tz],
+    );
+  }
+
+  if (args.look) {
+    const [fx, fy, fz, tx = 0, ty = 1, tz = 0] = args.look;
+    const placed = await page.evaluate(
+      ([a, b]) => window.uw.lookAt(a, b),
+      [[fx, fy, fz], [tx, ty, tz]],
+    );
+    console.log(`[shot] camera ${JSON.stringify(placed)}`);
+  }
+
+  if (args.fov !== undefined) await page.evaluate((f) => window.uw.setFov(f), args.fov);
+  if (args.noOrphan) await page.evaluate('window.uw.setOrphanUi(false)');
+  if (args.noGizmos) await page.evaluate('window.uw.setGizmos(false)');
+  if (args.wire) await page.evaluate('window.uw.setWireframe(true)');
+  if (args.select) {
+    const sel = await page.evaluate((n) => window.uw.select(n), args.select);
+    console.log(`[shot] selected ${sel ? sel.name : 'NOTHING (' + args.select + ')'}`);
+  }
+
+  /* ---- animation ---- */
+
+  const animators = await page.evaluate('window.uw.animators()');
+  if (args.listAnims) {
+    if (!animators.length) console.log('[anim] no Animator components in this scene');
+    for (const a of animators) {
+      console.log(`[anim] ${a.path}`);
+      console.log(`         controller: ${a.controller ?? '(none)'}`);
+      console.log(`         playing:    ${a.playing ?? '(nothing)'}`);
+      if (a.states?.length) console.log(`         states:     ${a.states.join(', ')}`);
+      console.log(`         clips (${a.clips.length}):`);
+      for (const c of a.clips) console.log(`           - ${c.name}  ${c.duration.toFixed(2)}s`);
     }
+  }
+
+  if (args.anim) {
+    const ok = await page.evaluate(
+      ([clip, who]) => window.uw.play(clip, who ?? undefined),
+      [args.anim, args.animTarget ?? null],
+    );
+    console.log(`[anim] play "${args.anim}" => ${ok ? 'ok' : 'FAILED'}`);
+    if (!ok && animators[0]) {
+      console.log(`[anim] available: ${animators[0].clips.map((c) => c.name).join(', ')}`);
+    }
+  }
+  if (args.animSpeed !== undefined) {
+    await page.evaluate(([s, w]) => window.uw.setAnimSpeed(s, w ?? undefined),
+                        [args.animSpeed, args.animTarget ?? null]);
+  }
+  if (args.advance !== undefined) {
+    await page.evaluate((d) => window.uw.stepAnim(d), args.advance);
+  }
+  if (args.animTime !== undefined) {
+    // Freeze the pose so the screenshot is deterministic, then sample it.
+    await page.evaluate('window.uw.setPaused(true)');
+    await page.evaluate(([t, w]) => window.uw.setAnimNormalized(t, w ?? undefined),
+                        [args.animTime, args.animTarget ?? null]);
+    console.log(`[anim] frozen at normalised t=${args.animTime}`);
   }
 
   // Frame the whole scene, or one named object, before any manual orbit.
@@ -149,14 +263,6 @@ async function capture() {
     if (!found) console.warn(`[shot] frame target not found: ${args.frame}`);
   }
 
-  if (args.orbit) {
-    const [yaw, pitch, dist, tx = 0, ty = 1.2, tz = 0] = args.orbit;
-    await page.evaluate(
-      ([y, p, d, x, yy, z]) => window.uw.setOrbit(y, p, d, x, yy, z),
-      [yaw, pitch, dist, tx, ty, tz],
-    );
-  }
-
   // Let textures finish decoding and a few frames settle.
   await page.waitForTimeout(args.wait);
   // Fonts and sprites load lazily, so paint the UI twice: the first pass warms
@@ -166,13 +272,52 @@ async function capture() {
   await page.evaluate('window.uw.paintUi()');
   await page.evaluate('window.uw.renderOnce()');
 
+  if (args.animTime !== undefined) {
+    // Re-apply after the settle wait, since the render loop may have advanced.
+    await page.evaluate(([t, w]) => window.uw.setAnimNormalized(t, w ?? undefined),
+                        [args.animTime, args.animTarget ?? null]);
+    await page.evaluate('window.uw.renderOnce()');
+  }
+
   const report = await page.evaluate('window.uw.report()');
   const cameras = await page.evaluate('window.uw.cameras()');
   const uiStats = await page.evaluate('window.uw.uiStats()');
+  const cameraState = await page.evaluate('window.uw.cameraState()');
+
+  // Arbitrary probes against the live page — the fastest way to diagnose a
+  // scene without adding one-off code to the viewer. Run last, so what they
+  // report is the state that was actually captured.
+  for (const expr of args.evals ?? []) {
+    try {
+      const value = await page.evaluate(`(() => (${expr}))()`);
+      console.log(`[eval] ${expr} =>`, JSON.stringify(value, null, 2));
+    } catch (err) {
+      console.log(`[eval] ${expr} => ERROR ${err.message}`);
+    }
+  }
+
+  for (const needle of args.inspect ?? []) {
+    const data = await page.evaluate((n) => window.uw.inspect(n), needle);
+    console.log(`[inspect] ${needle} =>`, JSON.stringify(data, null, 2));
+  }
+  if (args.dumpUi) {
+    const layout = await page.evaluate('window.uw.uiLayout()');
+    console.log(`[ui] ${layout.length} nodes`);
+    for (const n of layout) {
+      console.log(`  ${'  '.repeat(n.depth)}${n.active ? '' : '(off) '}${n.name} ` +
+                  `[${n.rect.join(', ')}] ${n.components.join(',')}`);
+    }
+  }
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  const canvas = await page.$('#viewport canvas');
-  await (canvas ?? page).screenshot({ path: outPath });
+  // With the editor chrome on we want the whole window; otherwise just the
+  // viewport canvas, so the PNG is pure rendered scene with no borders.
+  if (args.chrome) {
+    await page.screenshot({ path: outPath });
+  } else {
+    const canvas = await page.$('#viewport canvas');
+    await (canvas ?? page).screenshot({ path: outPath });
+  }
 
   console.log(`[shot] wrote ${outPath}`);
   if (uiStats && uiStats.widgets) {
@@ -195,6 +340,20 @@ async function capture() {
     }
   }
   if (cameras?.length) console.log(`[shot] cameras: ${cameras.map((c) => c.name).join(', ')}`);
+  console.log(`[shot] view: ${JSON.stringify(cameraState)}`);
+  if (animators?.length) {
+    console.log(`[shot] animators: ${animators.map((a) => `${a.path}(${a.clips.length} clips` +
+                `${a.playing ? ', playing ' + a.playing : ''})`).join(', ')}`);
+  }
+
+  if (args.json) {
+    const jsonPath = path.resolve(WEB_ROOT, args.json);
+    fs.mkdirSync(path.dirname(jsonPath), { recursive: true });
+    fs.writeFileSync(jsonPath, JSON.stringify({
+      scene: args.scene, out: outPath, report, cameras, cameraState, uiStats, animators,
+    }, null, 2));
+    console.log(`[shot] wrote ${jsonPath}`);
+  }
   if (process.env.UW_VERBOSE) logs.slice(-40).forEach((l) => console.log('   ' + l));
 
   await browser.close();

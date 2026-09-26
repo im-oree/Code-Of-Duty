@@ -74,6 +74,23 @@ export interface BuildReport {
   meshResolution: Map<ResolveStrategy, number>;
 }
 
+/**
+ * A Unity Animator found in the scene, with everything needed to drive it.
+ *
+ * The clips usually live inside the model file rather than as separate assets,
+ * so we record which model the Animator's skinned meshes came from — that is
+ * where `loadClips` will find the takes.
+ */
+export interface AnimatorRef {
+  path: string;
+  object: THREE.Object3D;
+  controllerGuid: string | null;
+  avatarGuid: string | null;
+  /** Model file supplying the animation takes, if one could be determined. */
+  modelPath: string | null;
+  applyRootMotion: boolean;
+}
+
 /** A screen-space canvas, kept unsolved until the viewport size is known. */
 export interface UiCanvasInfo {
   name: string;
@@ -97,6 +114,7 @@ export interface BuiltScene {
   cameras: CameraInfo[];
   report: BuildReport;
   uiCanvases: UiCanvasInfo[];
+  animators: AnimatorRef[];
   /** Solve every screen-space canvas for a given viewport, in draw order. */
   layoutUi(screenW: number, screenH: number, includeOrphans?: boolean): LayoutNode[];
 }
@@ -127,6 +145,9 @@ export class SceneBuilder {
     components: Map<string, UnityMap>;
   }>();
   private uiCanvases: UiCanvasInfo[] = [];
+  private animators: AnimatorRef[] = [];
+  /** Model path each object subtree's skinned meshes came from. */
+  private modelForObject = new Map<THREE.Object3D, string>();
   /** SkinnedMeshRenderers are resolved after the hierarchy exists, so bones are findable. */
   private pendingSkins: Array<{ doc: UnityDocument; obj: THREE.Object3D; goDoc: UnityDocument; path: string }> = [];
 
@@ -200,11 +221,22 @@ export class SceneBuilder {
 
     this.detectOrphanUi();
 
+    // Animators without an Avatar still need a clip source; use the model any
+    // skinned mesh below them was loaded from.
+    for (const animator of this.animators) {
+      if (animator.modelPath) continue;
+      animator.object.traverse((child) => {
+        if (animator.modelPath) return;
+        const found = this.modelForObject.get(child);
+        if (found) animator.modelPath = found;
+      });
+    }
+
     const layoutUi = (screenW: number, screenH: number, includeOrphans = false) =>
       this.layoutUi(screenW, screenH, includeOrphans);
     return {
       scene, root, nodes, cameras, report: this.report,
-      uiCanvases: this.uiCanvases, layoutUi,
+      uiCanvases: this.uiCanvases, animators: this.animators, layoutUi,
     };
   }
 
@@ -501,11 +533,31 @@ export class SceneBuilder {
       case 108: this.applyLight(doc, obj); break;
       case 20: this.applyCamera(doc, obj, path, cameras); break;
       case 223: this.registerCanvas(doc, obj, goDoc); break;
+      case 95: this.registerAnimator(doc, obj, path); break;
       case 137: this.pendingSkins.push({ doc, obj, goDoc, path }); break;
       case 198: this.report.warnings.push(`ParticleSystem not yet rendered: ${path}`); break;
       default: break;
     }
     void data;
+  }
+
+  /**
+   * Record an Animator. The model supplying its clips is resolved after the
+   * build, once we know which model each skinned mesh underneath it used.
+   */
+  private registerAnimator(doc: UnityDocument, obj: THREE.Object3D, path: string): void {
+    const controller = asRef(doc.body.m_Controller);
+    const avatar = asRef(doc.body.m_Avatar);
+    this.animators.push({
+      path,
+      object: obj,
+      controllerGuid: controller?.guid ?? null,
+      avatarGuid: avatar?.guid ?? null,
+      // An Avatar is created by the model importer, so its GUID names the model
+      // file — which is also where the animation takes are.
+      modelPath: avatar?.guid ? assets.pathForGuid(avatar.guid) : null,
+      applyRootMotion: num(doc.body.m_ApplyRootMotion, 0) !== 0,
+    });
   }
 
   /** Record a Canvas plus its CanvasScaler so layout can be solved later. */
@@ -586,6 +638,7 @@ export class SceneBuilder {
         skinned.frustumCulled = false; // deformed bounds are not the rest bounds
         obj.add(skinned);
         skinned.bind(bound.skeleton, resolved.mesh.bindMatrix ?? new THREE.Matrix4());
+        this.modelForObject.set(obj, resolved.modelPath);
 
         this.report.skinnedMeshes++;
         this.report.meshes++;

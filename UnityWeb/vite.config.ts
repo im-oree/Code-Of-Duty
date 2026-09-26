@@ -85,6 +85,54 @@ function unityProjectPlugin(): Plugin {
         res.end(JSON.stringify({ files: out.sort() }));
       });
 
+      // Project tree: Assets, Packages and ProjectSettings, for the Project
+      // browser. Returns directories and files with sizes and guids so the
+      // browser can render Unity's two-pane layout without extra round trips.
+      server.middlewares.use('/api/tree', (req, res) => {
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const rel = url.searchParams.get('path') ?? 'Assets';
+        const abs = safeJoin(rel);
+        const out: Array<Record<string, unknown>> = [];
+        if (abs && fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
+          for (const item of fs.readdirSync(abs, { withFileTypes: true })) {
+            if (item.name.startsWith('.') || item.name.endsWith('.meta')) continue;
+            const full = path.join(abs, item.name);
+            let size = 0;
+            try { size = item.isFile() ? fs.statSync(full).size : 0; } catch { /* ignore */ }
+            let guid: string | undefined;
+            try {
+              const meta = fs.readFileSync(`${full}.meta`, 'utf8');
+              guid = /^guid:\s*([0-9a-fA-F]{32})\s*$/m.exec(meta)?.[1];
+            } catch { /* no meta */ }
+            out.push({
+              name: item.name,
+              path: path.relative(PROJECT_ROOT, full).split(path.sep).join('/'),
+              dir: item.isDirectory(),
+              size,
+              guid,
+            });
+          }
+        }
+        out.sort((a, b) => (a.dir === b.dir
+          ? String(a.name).localeCompare(String(b.name))
+          : (a.dir ? -1 : 1)));
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ path: rel, entries: out }));
+      });
+
+      // Roots the Project browser offers.
+      server.middlewares.use('/api/roots', (_req, res) => {
+        const roots = ['Assets', 'Packages', 'ProjectSettings']
+          .filter((r) => fs.existsSync(path.join(PROJECT_ROOT, r)));
+        let unityVersion = 'unknown';
+        try {
+          const pv = fs.readFileSync(path.join(PROJECT_ROOT, 'ProjectSettings/ProjectVersion.txt'), 'utf8');
+          unityVersion = /m_EditorVersion:\s*(.+)/.exec(pv)?.[1]?.trim() ?? 'unknown';
+        } catch { /* ignore */ }
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ roots, unityVersion }));
+      });
+
       // Raw asset bytes (text or binary)
       server.middlewares.use('/api/file', (req, res) => {
         const url = new URL(req.url ?? '', 'http://localhost');
@@ -96,7 +144,8 @@ function unityProjectPlugin(): Plugin {
           return;
         }
         const ext = path.extname(abs).toLowerCase();
-        const binary = ['.png', '.jpg', '.jpeg', '.tga', '.psd', '.exr', '.fbx', '.glb', '.gltf', '.bin'];
+        const binary = ['.png', '.jpg', '.jpeg', '.tga', '.psd', '.exr', '.fbx', '.glb',
+                        '.gltf', '.bin', '.ttf', '.otf', '.wav', '.mp3', '.ogg', '.dll'];
         res.setHeader('Content-Type', binary.includes(ext) ? 'application/octet-stream' : 'text/plain; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache');
         res.end(fs.readFileSync(abs));

@@ -38,7 +38,7 @@ screenshot is never mistaken for a correct one.
 
 | # | Gap | What you see instead | Priority |
 |---|-----|----------------------|----------|
-| D1 | **Animation.** `AnimatorController`, state machines, `AnimationClip` playback, blend trees, Avatar masks, IK | Characters stand in whatever pose the scene saved | **High** — required for the tactical-sprint work |
+| D1 | **Animator state machines.** Clips, controllers, root-motion stripping and explicit playback now work (§5). Not simulated: transition *conditions*, blend trees, layers/avatar masks, IK | A state only changes when something asks it to. Nothing here sets gameplay parameters, so evaluating conditions would invent behaviour | **Medium** — deliberate, see §5 |
 | D2 | **Prefab instances** (classID 1001) with `m_Modification` overrides | Nothing renders for the instance. Affects `OfflineTest.unity` only (1 instance); `StartMenu` and `DMArena1` have none | Medium |
 | D3 | **Sprites with atlases / non-PNG formats.** Sprite rects, 9-slice borders, TGA/PSD | `Image` falls back to a flat tinted quad — usually right for this project, whose panels are untextured | Medium |
 | D4 | **TextMeshPro SDF fidelity.** We render the source TTF with the browser's text engine, not TMP's baked atlas | Glyph advances differ by ~1–3%; no outline, underlay, bevel or gradient | Medium |
@@ -107,6 +107,41 @@ camera. Visible in `Artifacts/p0/menu-final.png`.
 
 ---
 
+### F5 — The menu's idle animation is a single frame
+
+`Assets/Resources/Character/MenuIdleAnimator.controller` has exactly one state,
+`MenuIdle`, and it is bound to the clip `Root|Aim_C_Idle`.
+
+That clip is **0.0333 s long — one frame at 30 fps.** It is a crouched-aim
+*pose*, not an animation. So the reported symptom "animation is gone" in the
+main menu is true at the asset level, and no amount of code will fix it: the
+controller is pointed at a still.
+
+`MonKent.fbx` carries 46 usable takes. Looping candidates for a menu idle:
+
+| Clip | Length | Note |
+|---|---|---|
+| `Root|Idle` | 0.70 s | standing idle, verified to play and loop |
+| `Root|Aim_W_Idle` | 0.70 s | weapon-ready standing idle — the better fit for a menu operator holding a rifle |
+| `Root|Aim_Idle.TL` / `.TR` | 0.67 s | slow lean left/right, useful as an additive |
+
+Fix: repoint `MenuIdle` at `Root|Aim_W_Idle` and set the state to loop.
+
+### F6 — Baked root motion must be discarded, and Unity is already doing so
+
+Every take in `MonKent.fbx` animates the top bone `Root` with the character's
+travel baked in. Playing those tracks verbatim launched the operator 1.19 m into
+the air.
+
+This is not a rendering bug. The scene's Animator has `m_ApplyRootMotion: 0`,
+and Unity's contract for that flag is that the clip's root translation is *not*
+applied — the animation plays in place. The renderer now implements the same
+rule (`AnimatorInstance.stripRootMotion`), after which the rig's root sits at
+exactly the GameObject's world position, `(-0.600, 0.007, 0.000)`.
+
+Worth knowing before the gameplay work: any locomotion built on these clips gets
+its movement from code, never from the clips.
+
 ## 4. Calibration log
 
 Side-by-side comparisons against the real Editor. **Empty until the Unity Editor
@@ -118,3 +153,49 @@ is available** — no entry here may be filled in from reasoning alone.
 
 To add an entry: capture the same scene and camera in both, put the two PNGs in
 `Artifacts/calibration/`, and record the difference and what was done about it.
+
+---
+
+## 5. What the Animator layer does and does not do
+
+Scope was chosen so the tool stays *evidence*, not a second implementation that
+can disagree with Unity.
+
+**Implemented**
+
+- Clips are read from the model file the Animator's meshes came from. This
+  project has **zero `.anim` assets** — all 46 takes live inside `MonKent.fbx`
+  as FBX AnimStacks, which is why clip discovery follows the mesh, not the
+  `Assets/Animations` folder that does not exist.
+- Track values cross the same handedness mirror as vertex data: position
+  `(x, y, −z)`, quaternion `(−x, −y, z, w)`, scale unchanged. Skipping this
+  makes a character animate as its own mirror image, which is subtle enough to
+  pass a glance and fail a screenshot comparison.
+- `.controller` files are parsed for their layers, states, default state and
+  each state's motion, so the mapping from state name to clip is real rather
+  than guessed.
+- Root motion is stripped when the Animator disables it (F6).
+- The default state plays on load, so a scene opens the way Unity would show it.
+
+**Not implemented, on purpose**
+
+- *Transition conditions.* They read parameters that gameplay scripts set, and
+  no scripts run here (D11). Evaluating them would mean inventing values and
+  then presenting the result as what Unity does.
+- *Blend trees, layers, avatar masks, IK.* Each is a place where a plausible
+  approximation would be worse than an obvious absence, because a
+  nearly-right pose invites you to trust it.
+
+Instead, playback is explicit and addressable:
+
+```
+--list-anims                 every animator, its controller, states and clips
+--anim "Root|Aim_W_Idle"     play a clip or a controller state by name
+--anim-time 0.4              freeze at a normalised position, for a stable shot
+--advance 0.75               step forward N seconds, then capture
+--eval "window.uw.bones(undefined,'hand')"   read bone transforms numerically
+```
+
+Freezing at a normalised time is what makes animation review possible at all: a
+screenshot of a moving rig is not reproducible, so a pose has to be addressable
+before two captures can be compared.
