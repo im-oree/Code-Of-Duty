@@ -45,6 +45,7 @@ public class OperatorDisplay : MonoBehaviour
         bool wasActive = gameObject.activeSelf;
         gameObject.SetActive(false);
         model = Instantiate(prefab, transform, false);
+        UnpackIfPrefabInstance(model); // edit-mode bake: components can't be stripped off a linked prefab instance
         model.name = "OperatorModel";
         model.transform.localPosition = Vector3.zero;
         model.transform.localRotation = Quaternion.identity;
@@ -59,17 +60,29 @@ public class OperatorDisplay : MonoBehaviour
             rightHand = animator.isHuman ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
 
             // the gameplay controller needs live movement params (otherwise it
-            // sits in its falling/locomotion default) — the menu uses the kit's
-            // dedicated idle controller instead: standing aim-idle, no SMBs.
+            // sits in its falling/locomotion default) — the menu uses a
+            // dedicated single-state idle controller instead: standing aim-idle, no SMBs.
+            var originalController = animator.runtimeAnimatorController;
             var menuController = Resources.Load<RuntimeAnimatorController>("Character/MenuIdleAnimator");
             if (menuController != null)
             {
                 animator.runtimeAnimatorController = menuController;
-                animator.SetFloat("Blend", 0f);
+                animator.Update(0f);
+
+                // T-pose defense: if the idle clip failed to bind (missing/renamed
+                // sub-asset), fall back to the gameplay controller frozen grounded.
+                var clips = animator.GetCurrentAnimatorClipInfo(0);
+                if (clips == null || clips.Length == 0 || clips[0].clip == null)
+                {
+                    Debug.LogWarning("OperatorDisplay: menu idle clip missing — falling back to gameplay controller");
+                    animator.runtimeAnimatorController = originalController;
+                    animator.SetBool("isGrounded", true);
+                }
             }
             else
             {
                 // fallback: freeze the gameplay controller into its grounded idle
+                animator.SetBool("isGrounded", true);
                 animator.Play("GunPickUp", 1, 0f);
             }
             animator.Update(0f);
@@ -125,6 +138,17 @@ public class OperatorDisplay : MonoBehaviour
     }
 
     /// <summary>Removes every gameplay, physics and networking piece; keeps visuals + animator.</summary>
+    /// <summary>In edit mode an Instantiate keeps the prefab link, and Unity forbids
+    /// destroying components of a prefab instance — unpack completely first.</summary>
+    static void UnpackIfPrefabInstance(GameObject go)
+    {
+#if UNITY_EDITOR
+        if (!Application.isPlaying && go != null && UnityEditor.PrefabUtility.IsPartOfPrefabInstance(go))
+            UnityEditor.PrefabUtility.UnpackPrefabInstance(
+                go, UnityEditor.PrefabUnpackMode.Completely, UnityEditor.InteractionMode.AutomatedAction);
+#endif
+    }
+
     static void StripToDisplayOnly(GameObject root)
     {
         // cameras & audio
@@ -204,6 +228,7 @@ public class OperatorDisplay : MonoBehaviour
         }
 
         handWeapon = Instantiate(prefab);
+        UnpackIfPrefabInstance(handWeapon);
         handWeapon.name = prefab.name;
 
         foreach (var script in handWeapon.GetComponentsInChildren<MonoBehaviour>(true))

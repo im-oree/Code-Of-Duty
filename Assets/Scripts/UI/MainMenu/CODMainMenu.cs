@@ -22,66 +22,52 @@ public class CODMainMenu : MonoBehaviour
 
     static bool IsEditMode => !Application.isPlaying;
 
-    #region Editor preview — the menu is visible in the editor AT ALL TIMES.
-    // The preview is rebuilt from the CURRENT code after every scene open and
-    // script recompile, so code changes always reflect. It is destroyed BEFORE
-    // anything that closes the scene (play mode, recompile, save, scene switch)
-    // because DontSave objects leak through scene transitions otherwise
-    // ("Some objects were not cleaned up when closing the scene").
+    #region Editor bake — the menu is REAL SAVED SCENE OBJECTS, visible at all times.
+    // In the editor the whole menu (canvas, tabs, 3D stage) is baked into the
+    // scene as plain persistent GameObjects — no HideFlags, no DontSave — so
+    // everything the player sees on play already exists in the saved scene and
+    // can be inspected/tweaked there. After every scene open / script recompile
+    // the bake is refreshed from the CURRENT code (old copy purged, new copy
+    // built in place) so code changes always reflect; save the scene to persist.
+    // At runtime Start() replaces the baked copy with a fully wired live build.
 
 #if UNITY_EDITOR
     void OnEnable()
     {
         if (!IsEditMode) return;
 
-        UnityEditor.EditorApplication.playModeStateChanged -= OnPlayModeChanged;
-        UnityEditor.EditorApplication.playModeStateChanged += OnPlayModeChanged;
-        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload -= DestroyPreviewSafe;
-        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += DestroyPreviewSafe;
-
         // never build during OnEnable itself (scene may still be loading)
-        UnityEditor.EditorApplication.delayCall += DeferredBuildPreview;
+        UnityEditor.EditorApplication.delayCall += DeferredBakeMenu;
     }
 
     void OnDisable()
     {
-        UnityEditor.EditorApplication.playModeStateChanged -= OnPlayModeChanged;
-        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload -= DestroyPreviewSafe;
-        UnityEditor.EditorApplication.delayCall -= DeferredBuildPreview;
-
-        // only clean up during a *stable* edit session — never mid-transition
-        if (IsEditMode && !UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode)
-            DestroyPreviewSafe();
+        UnityEditor.EditorApplication.delayCall -= DeferredBakeMenu;
+        // baked objects are persistent scene content — nothing to destroy here
     }
 
-    void DeferredBuildPreview()
+    void DeferredBakeMenu()
     {
         if (this == null || !IsEditMode) return;
         if (UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode) return;
         if (!gameObject.scene.isLoaded) return;
 
-        DestroyPreview();
-        BuildCanvas();
-        BuildTopBar();
-        BuildTabs();
-        SelectTab("PLAY");
-        stage = MenuStage.Create();
+        try
+        {
+            DestroyPreview(); // purge the previous bake (and any legacy ghosts)
+            BuildCanvas();
+            BuildTopBar();
+            BuildTabs();
+            SelectTab("PLAY");
+            stage = MenuStage.Create();
 
-        MarkDontSave(uiRoot != null ? uiRoot.gameObject : null);
-        MarkDontSave(stage != null ? stage.gameObject : null);
-    }
-
-    void OnPlayModeChanged(UnityEditor.PlayModeStateChange change)
-    {
-        // tear the preview down while the edit scene is still fully alive,
-        // so nothing can leak into play mode
-        if (change == UnityEditor.PlayModeStateChange.ExitingEditMode)
-            DestroyPreviewSafe();
-    }
-
-    void DestroyPreviewSafe()
-    {
-        try { if (this != null) DestroyPreview(); } catch { }
+            // persistent scene objects: mark the scene dirty so saving keeps them
+            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e);
+        }
     }
 #endif
 
@@ -114,13 +100,6 @@ public class CODMainMenu : MonoBehaviour
         tabPanels.Clear();
         operatorCards.Clear();
         loadoutCards.Clear();
-    }
-
-    static void MarkDontSave(GameObject root)
-    {
-        if (root == null) return;
-        foreach (var t in root.GetComponentsInChildren<Transform>(true))
-            t.gameObject.hideFlags = HideFlags.DontSave;
     }
 
     #endregion
@@ -177,24 +156,40 @@ public class CODMainMenu : MonoBehaviour
     {
         if (IsEditMode) return;
 
-        DestroyPreview(); // clear any editor preview that survived into play
-        HideLegacyMenu();
-        stage = MenuStage.Create();
+        // Each phase is isolated: one broken subsystem (stage, network, vfx)
+        // must NEVER take the whole menu UI down with it.
+        Phase("purge baked copy", DestroyPreview); // replaced by the live wired build below
+        Phase("hide legacy menu", HideLegacyMenu);
+        Phase("3D stage", () => stage = MenuStage.Create());
+        Phase("network manager", () =>
+        {
+            var manager = CODNetworkManager.EnsureExists();
+            discovery = manager != null ? manager.discovery : null;
+        });
+        Phase("menu UI", () =>
+        {
+            BuildCanvas();
+            BuildTopBar();
+            BuildTabs();
+            BuildLobbyOverlay();
+            SelectTab("PLAY");
+        });
+        Phase("lobby events", () =>
+        {
+            CODLobbyPlayer.LobbyChanged += RefreshLobby;
+            CODLobbyPlayer.LocalPlayerJoined += ShowLobby;
+            CODNetworkManager.ClientError += OnClientError;
+        });
+        Phase("server discovery", StartBrowserDiscovery);
+    }
 
-        var manager = CODNetworkManager.EnsureExists();
-        discovery = manager != null ? manager.discovery : null;
-
-        BuildCanvas();
-        BuildTopBar();
-        BuildTabs();
-        BuildLobbyOverlay();
-        SelectTab("PLAY");
-
-        CODLobbyPlayer.LobbyChanged += RefreshLobby;
-        CODLobbyPlayer.LocalPlayerJoined += ShowLobby;
-        CODNetworkManager.ClientError += OnClientError;
-
-        StartBrowserDiscovery();
+    static void Phase(string label, System.Action action)
+    {
+        try { action(); }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[CODMainMenu] phase '{label}' failed — menu continues without it. {e}");
+        }
     }
 
     void OnDestroy()

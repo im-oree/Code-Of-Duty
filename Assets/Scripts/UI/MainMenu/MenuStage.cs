@@ -226,7 +226,8 @@ public class MenuStage : MonoBehaviour
         var ps = go.AddComponent<ParticleSystem>();
 
         var renderer = go.GetComponent<ParticleSystemRenderer>();
-        renderer.material = CreateSoftParticleMaterial();
+        var mat = CreateSoftParticleMaterial();
+        if (mat != null) renderer.material = mat;
         renderer.sortingOrder = 1;
         return ps;
     }
@@ -237,18 +238,28 @@ public class MenuStage : MonoBehaviour
     {
         if (softParticleMaterial != null) return softParticleMaterial;
 
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
-        mat.SetTexture("_BaseMap", CreateSoftCircleTexture());
-        mat.SetColor("_BaseColor", Color.white);
+        // shader fallback chain so particles can NEVER render magenta:
+        // URP particles -> URP unlit -> Sprites/Default (always included)
+        var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+        if (shader == null) return null; // caller keeps whatever default exists
 
-        // transparent alpha-blend setup for URP particles
-        mat.SetFloat("_Surface", 1f);
-        mat.SetFloat("_Blend", 0f);
-        mat.SetOverrideTag("RenderType", "Transparent");
-        mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-        mat.SetInt("_ZWrite", 0);
-        mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        var mat = new Material(shader);
+        mat.mainTexture = CreateSoftCircleTexture();
+        mat.color = Color.white;
+
+        // transparent alpha-blend setup for URP shaders (guarded per-property)
+        if (mat.HasProperty("_Surface"))
+        {
+            mat.SetFloat("_Surface", 1f);
+            if (mat.HasProperty("_Blend")) mat.SetFloat("_Blend", 0f);
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetInt("_ZWrite", 0);
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        }
         mat.renderQueue = (int)RenderQueue.Transparent;
 
         softParticleMaterial = mat;

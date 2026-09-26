@@ -73,9 +73,37 @@ public static class ExplosionVFX
         col.color = gradient;
 
         var renderer = go.GetComponent<ParticleSystemRenderer>();
+        if (material == null || material.shader == null) material = FallbackParticleMaterial();
         if (material != null) renderer.material = material;
 
         ps.Play();
+    }
+
+    static Material fallbackParticleMaterial;
+
+    /// <summary>Never-pink safety net: URP particles -> URP unlit -> Sprites/Default.</summary>
+    static Material FallbackParticleMaterial()
+    {
+        if (fallbackParticleMaterial != null) return fallbackParticleMaterial;
+
+        var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+        if (shader == null) return null;
+
+        var mat = new Material(shader) { color = new Color(1f, 0.6f, 0.25f, 0.9f) };
+        if (mat.HasProperty("_Surface"))
+        {
+            mat.SetFloat("_Surface", 1f);
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetInt("_ZWrite", 0);
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        }
+        mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        fallbackParticleMaterial = mat;
+        return mat;
     }
 
     /// <summary>Fades the flash light out over the first quarter second.</summary>
