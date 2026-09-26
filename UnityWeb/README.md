@@ -102,6 +102,23 @@ prefab docs), uGUI's anchor maths against hand-worked cases, prefab expansion, a
 the modelling pipeline's geometric invariants. Every suite exists because it caught
 a real bug that rendered plausibly but wrongly.
 
+## Checking whether a model really has animation
+
+A clip that plays but never moves is indistinguishable from a working one at
+every level above the file. `Tools/fbx-animation-report.mjs` reads the curve
+data straight out of a binary FBX, independently of any loader:
+
+```bash
+node Tools/fbx-animation-report.mjs Assets/Models/Character/MonKent.fbx
+node Tools/fbx-animation-report.mjs <model.fbx> --take Aim_W_Idle   # which bones move
+```
+
+Run it on anything re-exported from a DCC tool. An export with baking disabled
+produces correct take names, correct durations, correct key counts, and no
+movement. From inside the viewer, `uw.animBindings()` answers the same question
+for whatever is playing: `bound` high with `varying` zero means the clip is a
+static pose, not broken playback.
+
 ## Debugging a scene
 
 `shot` can run arbitrary probes against the live page, which is usually faster

@@ -807,6 +807,13 @@ const api = {
   play: (clipOrState: string, who?: string, opts?: { loop?: boolean; speed?: number; fade?: number }) =>
     animators.find(who)?.play(clipOrState, opts ?? {}) ?? false,
   stopAnim: (who?: string) => { animators.find(who)?.stop(); return true; },
+  /** How many of the playing clip's tracks actually reached a node. */
+  /**
+   * Health of the playing clip: how many tracks bound, and how many of them
+   * actually change value. `bound` high with `varying` zero means the clip is
+   * a static pose, not that playback is broken.
+   */
+  animBindings: (who?: string) => animators.find(who)?.bindingReport() ?? null,
   /** Absolute time in seconds. */
   setAnimTime: (seconds: number, who?: string) => {
     const a = animators.find(who);

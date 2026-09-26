@@ -178,6 +178,73 @@ export class AnimatorInstance {
     return true;
   }
 
+  /**
+   * Health of the clip that is currently playing.
+   *
+   * Every obvious signal can look correct while a character stands perfectly
+   * still: the Animator resolves, the clip is found, the action runs, its time
+   * advances, and every track binds to a real bone. The menu operator did all
+   * of that for weeks. The clip itself was flat -- 22 keyframes of the same
+   * pose -- and nothing above the file could tell.
+   *
+   * So this reports the two things that actually distinguish the cases:
+   * whether tracks reached a node (`bound`), and whether their values ever
+   * change (`varying`). A clip with `bound` high and `varying` zero is not a
+   * rendering problem, it is an asset problem -- run
+   * `Tools/fbx-animation-report.mjs` on the source model.
+   */
+  bindingReport(): {
+    clip: string | null; tracks: number; bound: number; unbound: string[];
+    running: boolean; weight: number; time: number;
+    varying: number; constant: number; movingNodes: string[];
+  } {
+    const action = this.current as (THREE.AnimationAction & {
+      _propertyBindings?: Array<{ binding?: { node?: unknown; path?: string } }>;
+    }) | null;
+    const empty = {
+      clip: null, tracks: 0, bound: 0, unbound: [], running: false,
+      weight: 0, time: 0, varying: 0, constant: 0, movingNodes: [],
+    };
+    if (!action) return empty;
+
+    const bindings = action._propertyBindings ?? [];
+    const unbound: string[] = [];
+    let bound = 0;
+    for (const b of bindings) {
+      if (b.binding?.node) bound++;
+      else if (unbound.length < 8) unbound.push(b.binding?.path ?? '<unknown>');
+    }
+
+    let varying = 0;
+    let constant = 0;
+    const movingNodes: string[] = [];
+    for (const track of action.getClip().tracks) {
+      const values = track.values;
+      const size = track.getValueSize();
+      let moves = false;
+      for (let i = size; i < values.length && !moves; i++) {
+        if (Math.abs(values[i] - values[i % size]) > 1e-4) moves = true;
+      }
+      if (moves) {
+        varying++;
+        if (movingNodes.length < 10) movingNodes.push(track.name);
+      } else constant++;
+    }
+
+    return {
+      clip: this.currentName,
+      tracks: bindings.length,
+      bound,
+      unbound,
+      running: action.isRunning(),
+      weight: action.getEffectiveWeight(),
+      time: +action.time.toFixed(4),
+      varying,
+      constant,
+      movingNodes,
+    };
+  }
+
   stop(): void {
     this.current?.stop();
     this.current = null;
