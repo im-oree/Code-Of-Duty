@@ -17,34 +17,22 @@ public class OperatorDisplay : MonoBehaviour
     float groundedLocalY;
 
     /// <summary>
-    /// Returns the operator under <paramref name="parent"/>, creating one only
-    /// if there is none.
-    ///
-    /// Deliberately non-destructive. The old version deleted every child named
-    /// "OperatorDisplay" or "OperatorModel" before making a new one, on the
-    /// theory that this guaranteed exactly one operator. It did the opposite:
-    /// combined with the deferred Destroy elsewhere in the menu, the delete and
-    /// the create could interleave and leave two.
+    /// Resolves the authored preview already stored below <paramref name="parent"/>.
+    /// The menu intentionally does not spawn an operator at runtime: an absent
+    /// preview is a scene-authoring error and is reported instead of hidden by a
+    /// generated replacement.
     /// </summary>
     public static OperatorDisplay EnsureUnder(Transform parent, Vector3 position, Quaternion rotation)
     {
         var existing = parent != null ? parent.GetComponentInChildren<OperatorDisplay>(true) : null;
-        if (existing != null)
+        if (existing == null)
         {
-            existing.Adopt();
-            return existing;
+            Debug.LogError("[OperatorDisplay] MenuStage has no authored OperatorDisplay.");
+            return null;
         }
 
-        var holder = new GameObject("OperatorDisplay");
-        holder.transform.SetParent(parent, false);
-        holder.transform.SetPositionAndRotation(position, rotation);
-
-        var display = holder.AddComponent<OperatorDisplay>();
-        display.idleSeed = Random.value * 10f;
-        display.BuildModel();
-        display.RefreshSkin();
-        display.RefreshWeapon();
-        return display;
+        existing.Adopt();
+        return existing;
     }
 
     /// <summary>
@@ -66,15 +54,13 @@ public class OperatorDisplay : MonoBehaviour
 
         if (model == null)
         {
-            Debug.LogWarning("[OperatorDisplay] no OperatorModel child in the scene — instantiating one.");
-            BuildModel();
+            Debug.LogError("[OperatorDisplay] StartMenu is missing the authored OperatorModel child.");
+            return;
         }
-        else
-        {
-            ConfigureAnimator();
-            if (rightHand == null) rightHand = FindBoneByName(model.transform, "hand_r", "righthand", "hand.r");
-            baseRotation = transform.localRotation;
-        }
+
+        ConfigureAnimator();
+        if (rightHand == null) rightHand = FindBoneByName(model.transform, "hand_r", "righthand", "hand.r");
+        baseRotation = transform.localRotation;
 
         if (idleSeed <= 0f) idleSeed = Random.value * 10f;
         RefreshSkin();
