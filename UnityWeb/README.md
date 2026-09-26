@@ -65,3 +65,29 @@ meshes, prefab instances, uGUI widget layout, particles, post-processing.
 
 **Standing rule: the harness is wrong until proven otherwise.** When it disagrees with the Unity
 Editor, log the case in `DIVERGENCES.md` and fix the harness.
+
+## Testing
+
+```bash
+npm test     # parser + layout unit tests (Node's runner, type-stripped)
+npm run check  # tsc --noEmit && npm test
+```
+
+19 tests cover the Unity YAML dialect (escapes, refs, negative fileIDs, stripped
+prefab docs) and uGUI's anchor maths against hand-worked cases. Both suites exist
+because each caught a real bug that rendered plausibly but wrongly.
+
+## Debugging a scene
+
+`shot` can run arbitrary probes against the live page, which is usually faster
+than adding one-off code to the viewer:
+
+```bash
+npm run shot -- --scene Assets/Scenes/StartMenu.unity --out /tmp/x.png \
+  --eval "window.uw.findObjects('Operator')" \
+  --eval "window.uw.skinInfo()"
+```
+
+Useful entries on `window.uw`: `report()`, `cameras()`, `hierarchy()`,
+`findObjects(name)`, `frameObject(name)`, `skinInfo()`, `uiStats()`,
+`setUiVisible(bool)`, `setOrphanUi(bool)`, `paintUi()`.

@@ -107,6 +107,62 @@ export function arrayOf(v: UnityValue | undefined): UnityValue[] {
 /* Scalar parsing                                                      */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Decode a YAML double-quoted scalar.
+ *
+ * Unity leans on this constantly: TextMeshPro writes its "empty" text as
+ * "\u200B" (a zero-width space), and any label containing a colon, a newline or
+ * a non-ASCII character is emitted double-quoted with escapes. Handling only
+ * \" and \\ leaves literal backslash-u sequences in the text, which then render
+ * as visible garbage.
+ *
+ * Processed in one left-to-right pass so an escaped backslash cannot be
+ * re-interpreted as the start of another escape.
+ */
+function unescapeDoubleQuoted(src: string): string {
+  if (!src.includes('\\')) return src;
+
+  let out = '';
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch !== '\\') { out += ch; continue; }
+
+    const next = src[++i];
+    switch (next) {
+      case undefined: out += '\\'; break;
+      case 'n': out += '\n'; break;
+      case 't': out += '\t'; break;
+      case 'r': out += '\r'; break;
+      case 'b': out += '\b'; break;
+      case 'f': out += '\f'; break;
+      case 'v': out += '\v'; break;
+      case '0': out += '\0'; break;
+      case 'a': out += '\x07'; break;
+      case 'e': out += '\x1b'; break;
+      case '"': out += '"'; break;
+      case '/': out += '/'; break;
+      case '\\': out += '\\'; break;
+      case 'N': out += '\u0085'; break;
+      case '_': out += '\u00a0'; break;
+      case 'L': out += '\u2028'; break;
+      case 'P': out += '\u2029'; break;
+      case 'x': case 'u': case 'U': {
+        const width = next === 'x' ? 2 : next === 'u' ? 4 : 8;
+        const hex = src.slice(i + 1, i + 1 + width);
+        if (hex.length === width && /^[0-9a-fA-F]+$/.test(hex)) {
+          out += String.fromCodePoint(parseInt(hex, 16));
+          i += width;
+        } else {
+          out += next; // malformed: keep it visible rather than swallow it
+        }
+        break;
+      }
+      default: out += next;
+    }
+  }
+  return out;
+}
+
 function parseScalar(raw: string): UnityValue {
   const s = raw.trim();
   if (s === '') return '';
@@ -117,7 +173,7 @@ function parseScalar(raw: string): UnityValue {
     const a = s[0];
     if ((a === '"' || a === "'") && s[s.length - 1] === a) {
       const inner = s.slice(1, -1);
-      return a === '"' ? inner.replace(/\\"/g, '"').replace(/\\\\/g, '\\') : inner.replace(/''/g, "'");
+      return a === '"' ? unescapeDoubleQuoted(inner) : inner.replace(/''/g, "'");
     }
   }
 
@@ -125,8 +181,16 @@ function parseScalar(raw: string): UnityValue {
   if (s[0] === '{') return parseFlowMap(s);
   if (s[0] === '[') return parseFlowSeq(s);
 
+  // A 32-character hex string is a Unity GUID and must stay a string. Some of
+  // them look exactly like scientific notation — the built-in resources GUID
+  // 0000000000000000e000000000000000 parses as 0 if you let parseFloat near it,
+  // which silently breaks every reference to Unity's default meshes.
+  if (/^[0-9a-fA-F]{32}$/.test(s)) return s;
+
   // Numbers. Unity writes plain decimals, exponents and `inf`/`-inf`.
-  if (/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/.test(s)) {
+  // An exponent is only honoured alongside a decimal point or a short mantissa,
+  // so long digit runs (hashes, fileIDs) are never mistaken for floats.
+  if (/^-?(?:\d{1,15}\.?\d*|\.\d+)(?:[eE][-+]?\d{1,3})?$/.test(s)) {
     const n = parseFloat(s);
     if (Number.isFinite(n)) return n;
   }
@@ -383,4 +447,20 @@ export function parseUnityYaml(source: string): UnityFile {
 export function parseMetaGuid(source: string): string | null {
   const m = /^guid:\s*([0-9a-fA-F]{32})\s*$/m.exec(source);
   return m ? m[1] : null;
+}
+
+/** Read a `{x, y}` map, as used by RectTransform anchors, pivots and sizes. */
+export function vec2(v: UnityValue | undefined): { x: number; y: number } | null {
+  const m = mapOf(v);
+  if (!m) return null;
+  return { x: num(m.x, 0), y: num(m.y, 0) };
+}
+
+/** Read an `{r, g, b, a}` map. Unity omits `a` in a few places; default it to 1. */
+export function color(
+  v: UnityValue | undefined,
+): { r: number; g: number; b: number; a: number } | null {
+  const m = mapOf(v);
+  if (!m) return null;
+  return { r: num(m.r, 0), g: num(m.g, 0), b: num(m.b, 0), a: num(m.a, 1) };
 }

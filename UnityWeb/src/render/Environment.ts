@@ -5,8 +5,8 @@
  */
 
 import * as THREE from 'three';
-import { num, mapOf, type UnityMap } from '../unity/YamlParser';
-import { readColor } from '../unity/Coords';
+import { num, mapOf, type UnityMap } from '../unity/YamlParser.ts';
+import { readColor } from '../unity/Coords.ts';
 
 export interface EnvironmentInfo {
   fog: boolean;

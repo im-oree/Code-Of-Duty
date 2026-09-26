@@ -10,7 +10,7 @@
  * resolves the same material/prefab GUIDs many times over.
  */
 
-import { parseUnityYaml, type UnityFile } from './YamlParser';
+import { parseUnityYaml, type UnityFile } from './YamlParser.ts';
 
 export class AssetDatabase {
   private guidToPath = new Map<string, string>();

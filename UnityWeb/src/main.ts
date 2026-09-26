@@ -11,8 +11,9 @@
  */
 
 import * as THREE from 'three';
-import { assets } from './unity/AssetDatabase';
-import { buildScene, type BuiltScene, type NodeInfo } from './runtime/SceneBuilder';
+import { assets } from './unity/AssetDatabase.ts';
+import { UguiRenderer } from './ui/UguiRenderer.ts';
+import { buildScene, type BuiltScene, type NodeInfo } from './runtime/SceneBuilder.ts';
 
 /* ------------------------------------------------------------------ */
 /* Renderer                                                            */
@@ -53,10 +54,20 @@ function setStatus(text: string | null, error = false) {
   statusEl.querySelector('.spin')?.classList.toggle('hidden', error);
 }
 
+/** Screen-space uGUI, painted to a 2D canvas and composited over the 3D frame. */
+const ugui = new UguiRenderer();
+let uiDirty = true;
+let uiPainting = false;
+let showUi = true;
+/** Preview UI subtrees that are not under a Canvas (Unity would show nothing). */
+let showOrphanUi = true;
+
 function resize() {
   const w = viewport.clientWidth || 1280;
   const h = viewport.clientHeight || 720;
   renderer.setSize(w, h, false);
+  ugui.resize(w, h, Math.min(window.devicePixelRatio || 1, 2));
+  uiDirty = true;
   const aspect = w / h;
   if (activeCamera instanceof THREE.PerspectiveCamera) {
     activeCamera.aspect = aspect;
@@ -115,6 +126,7 @@ async function loadScene(path: string) {
   try {
     const t0 = performance.now();
     built = await buildScene(path);
+    uiDirty = true;
     const ms = Math.round(performance.now() - t0);
 
     // Camera list
@@ -240,10 +252,37 @@ function escapeHtml(s: string) {
 /* Loop                                                                */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Repaint the uGUI layer. Async because fonts and sprites load on demand, so
+ * we mark it dirty and let the result appear a frame or two later rather than
+ * blocking the 3D view.
+ */
+async function repaintUi(): Promise<void> {
+  if (!built || uiPainting) return;
+  uiPainting = true;
+  try {
+    const w = viewport.clientWidth || 1280;
+    const h = viewport.clientHeight || 720;
+    const roots = built.layoutUi(w, h, showOrphanUi);
+    await ugui.paint(roots, w, h);
+  } catch (err) {
+    console.warn('[ui] paint failed', err);
+  } finally {
+    uiPainting = false;
+  }
+}
+
+function drawFrame(): void {
+  if (!built) return;
+  renderer.render(built.scene, activeCamera);
+  if (showUi) ugui.present(renderer);
+}
+
 function tick() {
   requestAnimationFrame(tick);
   if (usingOrbit) updateOrbit();
-  if (built) renderer.render(built.scene, activeCamera);
+  if (uiDirty && !uiPainting) { uiDirty = false; void repaintUi(); }
+  drawFrame();
 }
 
 /* ------------------------------------------------------------------ */
@@ -312,10 +351,117 @@ cameraPicker.onchange = () => selectCamera(cameraPicker.value);
     orbit.target.set(tx, ty, tz); updateOrbit();
   },
   frameAll,
-  report: () => built?.report ?? null,
+  /** Dump skinning diagnostics: bone counts, and model vs scene bone geometry. */
+  skinInfo: () => {
+    if (!built) return [];
+    const out: Array<Record<string, unknown>> = [];
+    built.root.traverse((o) => {
+      const sm = o as THREE.SkinnedMesh;
+      if (!sm.isSkinnedMesh || !sm.skeleton) return;
+      const bones = sm.skeleton.bones;
+      const inverses = sm.skeleton.boneInverses;
+      const bonePos = bones.map((b) => {
+        b.updateWorldMatrix(true, false);
+        return new THREE.Vector3().setFromMatrixPosition(b.matrixWorld);
+      });
+      // Where the bind matrices say each bone sat when the mesh was skinned.
+      const bindPos = inverses.map((m) =>
+        new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().copy(m).invert()));
+      const spreadOf = (pts: THREE.Vector3[]) => {
+        if (!pts.length) return 0;
+        const c = new THREE.Vector3();
+        pts.forEach((p) => c.add(p));
+        c.divideScalar(pts.length);
+        return Math.max(...pts.map((p) => p.distanceTo(c)));
+      };
+      const geo = sm.geometry;
+      geo.computeBoundingBox();
+      const gb = geo.boundingBox!;
+      out.push({
+        name: sm.name,
+        bones: bones.length,
+        inverses: inverses.length,
+        boneNames: bones.slice(0, 5).map((b) => b.name),
+        sceneBoneSpread: +spreadOf(bonePos).toFixed(4),
+        bindBoneSpread: +spreadOf(bindPos).toFixed(4),
+        geometrySize: gb.getSize(new THREE.Vector3()).toArray().map((v) => +v.toFixed(3)),
+        firstSceneBone: bonePos[0]?.toArray().map((v) => +v.toFixed(3)),
+        firstBindBone: bindPos[0]?.toArray().map((v) => +v.toFixed(3)),
+      });
+    });
+    return out;
+  },
+  /**
+   * Point the orbit camera at a named object (substring match, case-insensitive)
+   * and pull back far enough to see all of it. Returns what it framed.
+   */
+  frameObject: (needle: string | null) => {
+    if (!built) return null;
+    if (!needle) { frameAll(); return { name: '<scene>' }; }
+    // Collect every match, then take the first that actually has geometry —
+    // UI Groups share names with world objects and would otherwise win with an
+    // empty bounding box.
+    const want = needle.toLowerCase();
+    const matches: THREE.Object3D[] = [];
+    built.root.traverse((o) => {
+      if (o.name && o.name.toLowerCase().includes(want)) matches.push(o);
+    });
+    if (matches.length === 0) return null;
+
+    let hit: THREE.Object3D | null = null;
+    let box = new THREE.Box3();
+    for (const candidate of matches) {
+      const b = new THREE.Box3().setFromObject(candidate);
+      if (!b.isEmpty()) { hit = candidate; box = b; break; }
+    }
+    if (!hit) return null;
+    const size = box.getSize(new THREE.Vector3());
+    const centre = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z) * 0.5 || 1;
+    orbit.target.copy(centre);
+    orbit.dist = (radius / Math.tan((orbitCam.fov * Math.PI) / 360)) * 1.7;
+    usingOrbit = true;
+    activeCamera = orbitCam;
+    resize();
+    updateOrbit();
+    return {
+      name: hit.name,
+      centre: centre.toArray().map((v) => +v.toFixed(3)),
+      size: size.toArray().map((v) => +v.toFixed(3)),
+    };
+  },
+  /** List objects whose name matches, with world positions — for diagnosis. */
+  findObjects: (needle: string) => {
+    if (!built) return [];
+    const want = needle.toLowerCase();
+    const out: Array<Record<string, unknown>> = [];
+    built.root.traverse((o) => {
+      if (!o.name || !o.name.toLowerCase().includes(want)) return;
+      const p = o.getWorldPosition(new THREE.Vector3());
+      out.push({
+        name: o.name, type: o.type, visible: o.visible,
+        world: p.toArray().map((v) => +v.toFixed(3)),
+      });
+    });
+    return out;
+  },
+  report: () => {
+    if (!built) return null;
+    const r = built.report;
+    return {
+      ...r,
+      unmappedScripts: Object.fromEntries(r.unmappedScripts),
+      meshResolution: Object.fromEntries(r.meshResolution),
+    };
+  },
   cameras: () => built?.cameras.map((c) => ({ name: c.name, path: c.path, depth: c.depth })) ?? [],
   hierarchy: () => built?.nodes.map(summarise) ?? [],
-  renderOnce: () => { if (built) renderer.render(built.scene, activeCamera); },
+  renderOnce: () => drawFrame(),
+  /** Await a full UI repaint — the capture script uses this before shooting. */
+  paintUi: async () => { uiDirty = false; await repaintUi(); drawFrame(); },
+  setUiVisible: (v: boolean) => { showUi = v; uiDirty = true; },
+  setOrphanUi: (v: boolean) => { showOrphanUi = v; uiDirty = true; },
+  uiStats: () => ugui.stats,
 };
 
 function summarise(n: NodeInfo): unknown {

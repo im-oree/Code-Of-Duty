@@ -8,8 +8,8 @@
  */
 
 import * as THREE from 'three';
-import { assets } from '../unity/AssetDatabase';
-import { num, str, mapOf, arrayOf, asRef, type UnityMap, type UnityValue } from '../unity/YamlParser';
+import { assets } from '../unity/AssetDatabase.ts';
+import { num, str, mapOf, arrayOf, asRef, type UnityMap, type UnityValue } from '../unity/YamlParser.ts';
 
 export interface MaterialProps {
   colors: Map<string, { r: number; g: number; b: number; a: number }>;

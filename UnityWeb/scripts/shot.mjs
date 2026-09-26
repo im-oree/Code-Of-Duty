@@ -39,6 +39,9 @@ function parseArgs(argv) {
     else if (a === '--keep-server') out.keepServer = true;
     else if (a === '--overlay') out.overlay = true;
     else if (a === '--chrome') out.chrome = true;
+    else if (a === '--no-ui') out.noUi = true;
+    else if (a === '--frame') out.frame = next();
+    else if (a === '--eval') out.evals = [...(out.evals ?? []), next()];
   }
   return out;
 }
@@ -126,6 +129,26 @@ async function capture() {
     return;
   }
 
+  // Arbitrary probes against the live page — the fastest way to diagnose a
+  // scene without adding one-off code to the viewer.
+  for (const expr of args.evals ?? []) {
+    try {
+      const value = await page.evaluate(`(() => (${expr}))()`);
+      console.log(`[eval] ${expr} =>`, JSON.stringify(value, null, 2));
+    } catch (err) {
+      console.log(`[eval] ${expr} => ERROR ${err.message}`);
+    }
+  }
+
+  // Frame the whole scene, or one named object, before any manual orbit.
+  if (args.frame !== undefined) {
+    const found = await page.evaluate(
+      (sel) => window.uw.frameObject(sel),
+      args.frame === '' ? null : args.frame,
+    );
+    if (!found) console.warn(`[shot] frame target not found: ${args.frame}`);
+  }
+
   if (args.orbit) {
     const [yaw, pitch, dist, tx = 0, ty = 1.2, tz = 0] = args.orbit;
     await page.evaluate(
@@ -136,17 +159,29 @@ async function capture() {
 
   // Let textures finish decoding and a few frames settle.
   await page.waitForTimeout(args.wait);
+  // Fonts and sprites load lazily, so paint the UI twice: the first pass warms
+  // the caches, the second renders with everything resident.
+  if (args.noUi) await page.evaluate('window.uw.setUiVisible(false)');
+  await page.evaluate('window.uw.paintUi()');
+  await page.evaluate('window.uw.paintUi()');
   await page.evaluate('window.uw.renderOnce()');
 
   const report = await page.evaluate('window.uw.report()');
   const cameras = await page.evaluate('window.uw.cameras()');
+  const uiStats = await page.evaluate('window.uw.uiStats()');
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const canvas = await page.$('#viewport canvas');
   await (canvas ?? page).screenshot({ path: outPath });
 
   console.log(`[shot] wrote ${outPath}`);
+  if (uiStats && uiStats.widgets) {
+    console.log(`[shot] ui: ${uiStats.canvases} canvas, ${uiStats.widgets} widgets, ` +
+                `${uiStats.images} images, ${uiStats.texts} texts`);
+  }
   if (report) {
+    console.log(`[shot] models=${report.modelMeshes} skinned=${report.skinnedMeshes} ` +
+                `resolution=${JSON.stringify(report.meshResolution ?? {})}`);
     console.log(`[shot] objects=${report.gameObjects} meshes=${report.meshes} ` +
                 `lights=${report.lights} cameras=${report.cameras} canvases=${report.canvases}`);
     if (report.warnings?.length) {
