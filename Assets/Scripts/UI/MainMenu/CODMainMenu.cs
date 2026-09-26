@@ -217,6 +217,18 @@ public sealed class CODMainMenu : MonoBehaviour
     static void Bind(Button button, UnityEngine.Events.UnityAction action)
     {
         if (button == null) return;
+
+        // This is the concrete NullReferenceException path reported for the
+        // old menu: a Button authored while inactive can deserialize with a
+        // null persistent-click event. Calling RemoveAllListeners on that
+        // object aborts the rest of the menu binding. Restore the event object
+        // before wiring this already-authored Button; no UI object is created.
+        if (button.onClick == null)
+        {
+            Debug.LogWarning("[CODMainMenu] restored a missing Button.onClick event on '" + button.name + "'.");
+            button.onClick = new Button.ButtonClickedEvent();
+        }
+
         button.onClick.RemoveAllListeners();
         button.onClick.AddListener(action);
     }
