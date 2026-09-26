@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unity Web Clone — Code Of Duty</title>
+<style>
+  :root {
+    --bg-base:#0B0D10; --bg-raised:#12151A; --card:#171B21; --card-hover:#1E242C;
+    --line:#242A33; --line-strong:#39414D;
+    --text:#F2F5F8; --text-dim:#9AA5B1; --text-off:#5A626C;
+    --accent:#FF7A1A; --ok:#48D18A; --warn:#FFC24B; --bad:#FF4F4F;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; background:var(--bg-base); color:var(--text); font-family:var(--sans); overflow:hidden; }
+  #app { display:grid; grid-template-rows:48px 1fr; height:100%; }
+
+  header {
+    display:flex; align-items:center; gap:16px; padding:0 16px;
+    background:var(--bg-raised); border-bottom:1px solid var(--line);
+  }
+  header .mark { font-weight:700; letter-spacing:.14em; font-size:12px; text-transform:uppercase; }
+  header .mark span { color:var(--accent); }
+  header select, header button {
+    background:var(--card); color:var(--text); border:1px solid var(--line-strong);
+    padding:5px 10px; font-size:12px; font-family:var(--sans); border-radius:2px; cursor:pointer;
+  }
+  header select { min-width:280px; }
+  header button:hover { background:var(--card-hover); border-color:var(--accent); }
+  header .spacer { flex:1; }
+  header .stat { font-family:var(--mono); font-size:11px; color:var(--text-dim); }
+  header .stat b { color:var(--text); font-weight:600; }
+
+  main { display:grid; grid-template-columns:280px 1fr 300px; min-height:0; }
+  #hierarchy, #inspector {
+    background:var(--bg-raised); overflow:auto; font-size:12px;
+  }
+  #hierarchy { border-right:1px solid var(--line); }
+  #inspector { border-left:1px solid var(--line); }
+  .panel-title {
+    position:sticky; top:0; background:var(--bg-raised); padding:8px 12px;
+    font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim);
+    border-bottom:1px solid var(--line); z-index:2;
+  }
+  .node { padding:2px 8px; cursor:pointer; white-space:nowrap; display:flex; gap:6px; align-items:center; }
+  .node:hover { background:var(--card-hover); }
+  .node.sel { background:var(--card); box-shadow:inset 3px 0 0 var(--accent); }
+  .node.off { color:var(--text-off); }
+  .node .tw { width:12px; color:var(--text-off); font-family:var(--mono); }
+  .node .cmp { color:var(--text-off); font-size:10px; font-family:var(--mono); }
+
+  #viewport { position:relative; min-width:0; background:#000; }
+  #viewport canvas { display:block; width:100%; height:100%; }
+  #overlay {
+    position:absolute; left:10px; bottom:10px; font-family:var(--mono); font-size:11px;
+    color:var(--text-dim); background:rgba(11,13,16,.78); padding:6px 9px;
+    border:1px solid var(--line); border-radius:2px; pointer-events:none; line-height:1.5;
+  }
+  #status {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px; color:var(--text-dim); font-size:13px; background:var(--bg-base);
+  }
+  #status.hidden { display:none; }
+  .spin { width:22px; height:22px; border:2px solid var(--line-strong); border-top-color:var(--accent);
+          border-radius:50%; animation:s 0.8s linear infinite; }
+  @keyframes s { to { transform:rotate(360deg); } }
+
+  .insp-row { padding:5px 12px; border-bottom:1px solid var(--line); }
+  .insp-row .k { color:var(--text-dim); font-size:10px; text-transform:uppercase; letter-spacing:.1em; }
+  .insp-row .v { font-family:var(--mono); font-size:11px; word-break:break-all; }
+  .cmp-chip {
+    display:inline-block; background:var(--card); border:1px solid var(--line-strong);
+    padding:2px 7px; margin:2px 3px 2px 0; border-radius:2px; font-size:10px; font-family:var(--mono);
+  }
+  .warn { color:var(--warn); }
+  .bad { color:var(--bad); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="mark">UNITY<span>WEB</span></div>
+    <select id="scene-picker"><option>loading…</option></select>
+    <select id="camera-picker"><option value="__orbit">Orbit camera</option></select>
+    <button id="reload">Reload</button>
+    <button id="frame">Frame all</button>
+    <div class="spacer"></div>
+    <div class="stat" id="stats"></div>
+  </header>
+  <main>
+    <div id="hierarchy"><div class="panel-title">Hierarchy</div><div id="tree"></div></div>
+    <div id="viewport">
+      <div id="status"><div class="spin"></div><div id="status-text">Loading project index…</div></div>
+      <div id="overlay"></div>
+    </div>
+    <div id="inspector"><div class="panel-title">Inspector</div><div id="insp"></div></div>
+  </main>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
