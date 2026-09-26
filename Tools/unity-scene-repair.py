@@ -26,6 +26,7 @@ refuses anything ambiguous rather than guessing.
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import sys
 from dataclasses import dataclass, field
@@ -271,6 +272,196 @@ def cmd_adopt_orphan_ui(scene: Scene, args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_transform(scene: Scene, spec: str) -> int:
+    """Accept `&fileID`, an exact object name, or `Parent/Child` to disambiguate."""
+    if spec.startswith("&"):
+        file_id = int(spec[1:])
+        if scene.by_id(file_id) is None:
+            sys.exit(f"no object &{file_id}")
+        return file_id
+
+    want = spec.split("/")[-1]
+    matches = []
+    for cls in (TRANSFORM, RECT_TRANSFORM):
+        for t in scene.of_class(cls):
+            if name_of_transform(scene, t.file_id) != want:
+                continue
+            if "/" in spec:
+                parent = ref_id(get_field(t, "m_Father"))
+                if not parent or name_of_transform(scene, parent) != spec.split("/")[-2]:
+                    continue
+            matches.append(t.file_id)
+
+    if not matches:
+        sys.exit(f"no transform named {spec!r}")
+    if len(matches) > 1:
+        lines = "\n".join(
+            f"    &{m}  under {name_of_transform(scene, ref_id(get_field(scene.by_id(m), 'm_Father')))}"
+            for m in matches
+        )
+        sys.exit(f"{len(matches)} transforms named {spec!r} — use &fileID or Parent/Child:\n{lines}")
+    return matches[0]
+
+
+def cmd_reparent(scene: Scene, args: argparse.Namespace) -> int:
+    """
+    Move one transform under another, optionally setting its local pose.
+
+    Used to put a weapon in a hand bone: the offset that aligns the weapon's
+    authored grip point with the palm is a property of the weapon, not of the
+    pose, so it can be baked into the scene once instead of being recomputed by
+    a script at runtime.
+    """
+    if not args.child or not args.parent:
+        sys.exit("reparent needs --child and --parent")
+
+    child_id = resolve_transform(scene, args.child)
+    parent_id = resolve_transform(scene, args.parent)
+    if child_id == parent_id:
+        sys.exit("a transform cannot be its own parent")
+
+    child = scene.by_id(child_id)
+    parent = scene.by_id(parent_id)
+    assert child is not None and parent is not None
+
+    # Refuse a cycle rather than writing a scene Unity cannot open.
+    walker, seen = parent_id, set()
+    while walker and walker not in seen:
+        if walker == child_id:
+            sys.exit(f"{args.parent!r} is inside {args.child!r} — that would make a cycle")
+        seen.add(walker)
+        walker = ref_id(get_field(scene.by_id(walker), "m_Father")) if scene.by_id(walker) else 0
+
+    old_parent_id = ref_id(get_field(child, "m_Father"))
+    old_parent = scene.by_id(old_parent_id) if old_parent_id else None
+
+    print(f"{scene.path}")
+    print(f"  {name_of_transform(scene, child_id)} (&{child_id})")
+    print(f"    from {name_of_transform(scene, old_parent_id) if old_parent else '<scene root>'}")
+    print(f"    to   {name_of_transform(scene, parent_id)} (&{parent_id})")
+    if args.local_position:
+        print(f"    localPosition {args.local_position}")
+    if args.local_rotation:
+        print(f"    localRotation {args.local_rotation}")
+
+    if args.dry_run:
+        print("  (dry run — nothing written)")
+        return 0
+
+    if old_parent is not None:
+        kids = [k for k in get_list(old_parent, "m_Children") if k != child_id]
+        set_list(old_parent, "m_Children", kids)
+    else:
+        roots_doc = scene_roots_doc(scene)
+        set_list(roots_doc, "m_Roots", [r for r in get_list(roots_doc, "m_Roots") if r != child_id])
+
+    set_field(child, "m_Father", f"{{fileID: {parent_id}}}")
+    set_list(parent, "m_Children", get_list(parent, "m_Children") + [child_id])
+
+    if args.local_position:
+        x, y, z = (float(v) for v in args.local_position.split(","))
+        set_field(child, "m_LocalPosition", f"{{x: {x}, y: {y}, z: {z}}}")
+    if args.local_rotation:
+        x, y, z, w = (float(v) for v in args.local_rotation.split(","))
+        set_field(child, "m_LocalRotation", f"{{x: {x}, y: {y}, z: {z}, w: {w}}}")
+        # Unity keeps a separate euler hint for the inspector. A stale hint makes
+        # the inspector show a rotation that is not the one in effect.
+        set_field(child, "m_LocalEulerAnglesHint", "{x: 0, y: 0, z: 0}")
+
+    scene.save()
+    print("  written.")
+    return 0
+
+
+def cmd_set_active(scene: Scene, args: argparse.Namespace) -> int:
+    """Toggle m_IsActive on a GameObject, by the name of its transform."""
+    if not args.child:
+        sys.exit("set-active needs --child")
+    tid = resolve_transform(scene, args.child)
+    t = scene.by_id(tid)
+    assert t is not None
+    go = scene.by_id(ref_id(get_field(t, "m_GameObject")))
+    if go is None:
+        sys.exit("that transform has no GameObject")
+
+    value = "0" if args.off else "1"
+    print(f"{scene.path}: {name_of_transform(scene, tid)} m_IsActive -> {value}")
+    if args.dry_run:
+        print("  (dry run — nothing written)")
+        return 0
+    if not set_field(go, "m_IsActive", value):
+        sys.exit("could not rewrite m_IsActive")
+    scene.save()
+    print("  written.")
+    return 0
+
+
+def cmd_set_transform(scene: Scene, args: argparse.Namespace) -> int:
+    """Set a transform's local position / rotation in place, without reparenting.
+
+    Rotation may be given as a quaternion (--local-rotation x,y,z,w) or, more
+    readably, as Unity inspector euler degrees (--local-euler x,y,z). Euler
+    input also refreshes m_LocalEulerAnglesHint, so the inspector shows the
+    angles that were actually asked for rather than a recovered equivalent.
+    """
+    if not args.child:
+        sys.exit("set-transform needs --child")
+    tid = resolve_transform(scene, args.child)
+    t = scene.by_id(tid)
+    assert t is not None
+
+    quat = None
+    hint = None
+    if args.local_euler:
+        ex, ey, ez = (float(v) for v in args.local_euler.split(","))
+        quat = euler_to_quat(ex, ey, ez)
+        hint = (ex, ey, ez)
+    elif args.local_rotation:
+        quat = tuple(float(v) for v in args.local_rotation.split(","))
+
+    print(f"{scene.path}")
+    print(f"  {name_of_transform(scene, tid)} (&{tid})")
+    if args.local_position:
+        print(f"    localPosition {args.local_position}")
+    if quat is not None:
+        print("    localRotation " + ",".join(f"{c:.6f}" for c in quat)
+              + (f"   (euler {args.local_euler})" if hint else ""))
+    if args.dry_run:
+        print("  (dry run — nothing written)")
+        return 0
+
+    if args.local_position:
+        x, y, z = (float(v) for v in args.local_position.split(","))
+        set_field(t, "m_LocalPosition", f"{{x: {x}, y: {y}, z: {z}}}")
+    if quat is not None:
+        x, y, z, w = quat
+        set_field(t, "m_LocalRotation", f"{{x: {x}, y: {y}, z: {z}, w: {w}}}")
+        hx, hy, hz = hint if hint else (0, 0, 0)
+        set_field(t, "m_LocalEulerAnglesHint", f"{{x: {hx}, y: {hy}, z: {hz}}}")
+    scene.save()
+    print("  written.")
+    return 0
+
+
+def euler_to_quat(x_deg: float, y_deg: float, z_deg: float) -> tuple[float, float, float, float]:
+    """Unity euler degrees -> quaternion, using Unity's ZXY application order."""
+    hx, hy, hz = (math.radians(a) / 2.0 for a in (x_deg, y_deg, z_deg))
+    sx, cx = math.sin(hx), math.cos(hx)
+    sy, cy = math.sin(hy), math.cos(hy)
+    sz, cz = math.sin(hz), math.cos(hz)
+    # q = qy * qx * qz  (Unity composes rotations Z, then X, then Y)
+    raw = (
+        cy * sx * cz + sy * cx * sz,
+        sy * cx * cz - cy * sx * sz,
+        cy * cx * sz - sy * sx * cz,
+        cy * cx * cz + sy * sx * sz,
+    )
+    # cos(pi/2) comes out as 6.12e-17, which Unity reads fine but which makes a
+    # scene diff unreadable. Right angles are the common case here, so snap the
+    # float dust away rather than leaving it in the file.
+    return tuple(0.0 if abs(c) < 1e-9 else round(c, 9) for c in raw)  # type: ignore[return-value]
+
+
 def cmd_verify(scene: Scene, _args: argparse.Namespace) -> int:
     """Check the invariants a hand edit is most likely to break."""
     problems: list[str] = []
@@ -329,6 +520,9 @@ def cmd_verify(scene: Scene, _args: argparse.Namespace) -> int:
 COMMANDS = {
     "list-roots": cmd_list_roots,
     "adopt-orphan-ui": cmd_adopt_orphan_ui,
+    "reparent": cmd_reparent,
+    "set-active": cmd_set_active,
+    "set-transform": cmd_set_transform,
     "verify": cmd_verify,
 }
 
@@ -341,6 +535,12 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="print the plan, write nothing")
     ap.add_argument("--canvas", help="Canvas to adopt into, when the scene has several")
     ap.add_argument("--order", help="comma-separated child order, back to front")
+    ap.add_argument("--child", help="transform to move: name, Parent/Child, or &fileID")
+    ap.add_argument("--parent", help="new parent: name, Parent/Child, or &fileID")
+    ap.add_argument("--local-position", help="x,y,z to set after reparenting")
+    ap.add_argument("--local-rotation", help="x,y,z,w quaternion to set after reparenting")
+    ap.add_argument("--local-euler", help="x,y,z Unity inspector degrees (alternative to --local-rotation)")
+    ap.add_argument("--off", action="store_true", help="set-active: deactivate instead of activate")
     args = ap.parse_args()
 
     if not args.scene.exists():

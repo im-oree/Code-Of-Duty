@@ -27,6 +27,7 @@ test or a verifiable measurement.
 | R6 | Orphaned UI panels laid out against the full screen | Root panels were given the screen rect instead of solving their own anchors | Orphan roots now solve against the screen; only a real Canvas is forced to screen size | visual — `Panel_PLAY` inset 132px |
 | R7 | Weapons ~100x too large | Unity's ModelImporter scale was ignored | `importScale = meshes.globalScale × UnitScaleFactor / 100`, read from the `.meta` and the FBX header. Verified against Unity's own derived value (N4_Rifle: 0.165 × 0.01 = 0.00165) | measurement: rifle is 0.15 × 0.44 × 0.40 m |
 | R8 | Characters rendered as scattered limbs | Imported vertex data was still left-handed while the scene graph around it had been mirrored | `render/Mirror.ts` — mirror positions, normals, tangents, winding, and bind matrices (`M·A·M`) | visual, `Artifacts/p0/stage3.png` |
+| R10 | Multi-part props (rifles, the scope, the pistol) rendered exploded — every piece displaced by exactly its own offset from the model root, so the further down the barrel, the wider the gap | `collectMeshes` baked each node's **model-space** `matrixWorld` into its geometry. Unity's importer does not do this: it rebuilds the node hierarchy as GameObjects and keeps Mesh vertices in **node-local** space. The scene transform then applied the same offset a second time | Geometry stays node-local. The model-space matrix is kept on `ModelMesh.modelMatrix` and applied only when `ResolvedMesh.needsModelMatrix` — i.e. when the mesh was matched by a *guess* (`only-mesh`/`largest-mesh`/`stable-index`) and so no scene transform stands in for the model node | measurement: for `N4_Rifle`, scene node z vs geometry-derived z now agree (Butt +0.204/+0.192, GasPiston −0.217/−0.226, trunk −0.426/−0.432); visual `Artifacts/p1/grip-side.png` |
 | R9 | Character flattened into a pancake (`geometrySize` `[1.789, 0.304, 1.552]`) | `SkinnedMesh.bind()` was given an identity bind matrix, discarding the mesh node's own transform, where FBX exporters park the up-axis correction | Carry `bindMatrix` through, mirrored | visual + `window.uw.skinInfo()` |
 
 ---
@@ -86,12 +87,48 @@ simply blank. This is the root cause of "the UI is gone".
 Fix: reparent all eight under `MenuUI`. Tracked as Phase 1 / D1 in
 `Docs/plan/29-PHASE-1-WORKPLAN.md`.
 
-### F2 — The operator is not holding the weapon
+### F2 — The operator is not holding the weapon — FIXED
 
-`OperatorDisplay/OperatorModel/MonKent` renders correctly (62 bones, skinned,
-both `BodyMash` and `HeadMash`), but the rifle sits beside the character rather
-than in its hands: no bone attachment, no grip pose. Matches the reported "no
-gun, no animation".
+The rifle and pistol sat at the model origin, on the ground. Two separate
+causes had to be told apart, and the order mattered.
+
+**The scene defect.** Weapons lived under `Rigs/SlotsRig/{RifleSlot1Rig,
+PistolSlotRig}`, and those rigs sit at the model origin. In the *player*
+prefab that is harmless: `WeaponSlotRig.Execute()` rewrites the slot's world
+transform every frame, lerping between `inactiveSlot` and the hand pointers by
+`weight`. But the menu operator's scripts were stripped when the scene was
+baked — the only non-Transform/Renderer components left under `OperatorDisplay`
+are `OperatorDisplay`, one `Animator` and two `AudioSource`s. Nothing moves the
+weapons, so the saved transform is what you get. Runtime injection was not an
+option (the menu must be real, editable scene objects), so the resting poses
+were baked into the scene instead:
+
+* **Rifle** — reparented to the `RightHand` bone with the grip alignment
+  `AttachToHand` would compute. For grip `G` relative to the weapon root,
+  `localRotation = inverse(G.rot)` and `localPosition = −(inverse(G.rot) · G.pos)`.
+  This is a fixed point: if `AttachToHand` ever does run, it produces exactly
+  the same numbers, so the bake is idempotent.
+* **Pistol** — `WeaponSlotRig` at `weight: 0` snaps the slot onto its
+  `inactiveSlot` mount, and `WeaponController.LateUpdate` leaves holstered guns
+  *visible* (`hideHolsteredGuns` is off — "holstered guns rest on their
+  inactiveSlot mounts"). The pistol's mount is `PistolSotObject`, under
+  `Root/Hips/RightUpLeg`. Parenting `PistolSlotRig` there with an identity
+  local transform reproduces `Execute()` exactly **and** keeps the pistol
+  glued to the thigh as the idle animation plays, which baking world
+  coordinates would not.
+
+Verified with `uw.relative('N4_Rifle/Points/RHPoint', 'RightForeArm/RightHand')`
+→ position `0,0,0`, distance `0`.
+
+**The trap.** Two grip markers in this scene are both named `Points/RHPoint`,
+one under the rifle and one under the pistol. The first attempt paired the
+rifle with the *pistol's* grip and left a 3.4 cm residual. Name-based lookup is
+what caused it, so `findNodeInfo` now takes `&fileID` and path tails
+(`N4_Rifle/Points/RHPoint`) and only falls back to substring matching last.
+
+**The masking defect.** Even once seated, the rifle still looked wrong — it
+rendered as a cloud of loose parts. That was R10 above, a viewer bug, not a
+scene bug. Both had to be fixed before either could be confirmed by eye.
 
 ### F3 — Five of eight panels are inactive
 
@@ -100,10 +137,22 @@ gun, no animation".
 active. Consistent with the PLAY tab being selected, so this is expected — noted
 so it is not mistaken for a rendering fault.
 
-### F4 — The menu camera framing puts the operator at the frame edge
+### F4 — The menu camera framing puts the operator at the frame edge — FIXED
 
-At 16:9 the operator is cropped against the right edge and very close to the
-camera. Visible in `Artifacts/p0/menu-final.png`.
+At 16:9 the operator was cropped against the right edge and partly hidden
+behind the LAN browser.
+
+The usable gap is bounded by the UI, not by the stage: the left cards end at
+x≈320 px and the LAN panel starts at x≈968 px, so the operator belongs around
+x≈644 px. Framing was solved rather than eyeballed — key bones were projected
+through a trial `PerspectiveCamera` at the scene's own fov (40) to get a
+screen-space response curve (≈520 px per world unit of camera x), then the
+answer was written back with `Tools/unity-scene-repair.py set-transform`.
+
+`Main Camera` is now at `(-1.03, 0.78, 2.95)`, euler `(0, 180, 0)`, fov 40.
+Vertically that puts the head at ≈110 px (clear of the 56 px top bar) and the
+feet at ≈640 px (clear of the bottom bar), with the silhouette centred in the
+gap. See `Artifacts/p1/menu-framed.png`.
 
 ---
 
