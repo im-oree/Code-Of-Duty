@@ -63,7 +63,7 @@ public class CODMainMenu : MonoBehaviour
 
             // persistent scene objects: mark the scene dirty so saving keeps them
             UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
-            Debug.Log("[CODMainMenu] editor menu bake complete (build 4) — save the scene to persist it");
+            Debug.Log("[CODMainMenu] editor menu bake complete (build 5) — save the scene to persist it");
         }
         catch (System.Exception e)
         {
@@ -73,15 +73,18 @@ public class CODMainMenu : MonoBehaviour
 #endif
 
     static readonly string[] PreviewRootNames =
-        { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay" };
+        { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay", "Panel_" };
 
-    /// <summary>Removes preview objects AND any ghosts that leaked to the scene root.</summary>
+    /// <summary>Removes every menu object built by ANY previous version of this
+    /// code — baked copies, editor previews and ghosts that leaked to the scene
+    /// root (some may be saved inside the user's local scene file). Prefix
+    /// matching also catches duplicates like "TopBar (1)".</summary>
     void DestroyPreview()
     {
         for (int i = transform.childCount - 1; i >= 0; i--)
         {
             var child = transform.GetChild(i);
-            if (child.name == "MenuUI") DestroyImmediate(child.gameObject);
+            if (MatchesMenuName(child.name)) DestroyImmediate(child.gameObject);
         }
 
         var scene = gameObject.scene;
@@ -90,10 +93,7 @@ public class CODMainMenu : MonoBehaviour
             foreach (var root in scene.GetRootGameObjects())
             {
                 if (root == null || root == gameObject) continue;
-                bool ghost = root.name.StartsWith("Panel_");
-                foreach (var name in PreviewRootNames)
-                    if (root.name == name) { ghost = true; break; }
-                if (ghost) DestroyImmediate(root);
+                if (MatchesMenuName(root.name)) DestroyImmediate(root);
             }
         }
 
@@ -101,6 +101,13 @@ public class CODMainMenu : MonoBehaviour
         tabPanels.Clear();
         operatorCards.Clear();
         loadoutCards.Clear();
+    }
+
+    static bool MatchesMenuName(string name)
+    {
+        foreach (var prefix in PreviewRootNames)
+            if (name.StartsWith(prefix)) return true;
+        return false;
     }
 
     #endregion
@@ -153,6 +160,14 @@ public class CODMainMenu : MonoBehaviour
     List<List<WeaponDatabase.Entry>> loadoutOptions;
     List<int> loadoutSelection;
 
+    void Awake()
+    {
+        // earliest possible cleanup: a saved scene may contain baked menu
+        // copies (or ghosts from older versions) — wipe them before anything
+        // else runs so play mode ALWAYS starts from a clean slate.
+        if (!IsEditMode) Phase("awake purge", DestroyPreview);
+    }
+
     void Start()
     {
         if (IsEditMode) return;
@@ -183,7 +198,7 @@ public class CODMainMenu : MonoBehaviour
         });
         Phase("server discovery", StartBrowserDiscovery);
 
-        Debug.Log("[CODMainMenu] runtime menu build finished (build 4)");
+        Debug.Log("[CODMainMenu] runtime menu build finished (build 5)");
     }
 
     static void Phase(string label, System.Action action)

@@ -18,6 +18,17 @@ public class OperatorDisplay : MonoBehaviour
 
     public static OperatorDisplay Create(Transform parent, Vector3 position, Quaternion rotation)
     {
+        // never allow two operators under the same stage
+        if (parent != null)
+        {
+            for (int i = parent.childCount - 1; i >= 0; i--)
+            {
+                var child = parent.GetChild(i);
+                if (child.name == "OperatorDisplay" || child.name == "OperatorModel")
+                    DestroyImmediate(child.gameObject);
+            }
+        }
+
         var holder = new GameObject("OperatorDisplay");
         holder.transform.SetParent(parent, false);
         holder.transform.SetPositionAndRotation(position, rotation);
