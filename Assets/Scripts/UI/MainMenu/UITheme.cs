@@ -92,23 +92,61 @@ public static class UITheme
         return text;
     }
 
+    /// <summary>
+    /// Makes an image clickable and binds its runtime action.
+    ///
+    /// Buttons in the saved frontend are sometimes authored by an editor tool
+    /// while the object is inactive. A few Unity versions can deserialize those
+    /// components with a null <c>m_OnClick</c> event. The visual state still
+    /// changes when clicked, which makes this look like a broken gameplay
+    /// handler, but attaching the first listener throws and prevents the rest
+    /// of the menu from bootstrapping. Always restore the event object before
+    /// touching it, and replace the previous runtime action on adopted UI.
+    /// </summary>
+    public static Button BindClick(Image image, UnityEngine.Events.UnityAction onClick)
+    {
+        if (image == null)
+        {
+            Debug.LogError("UITheme: cannot bind a click handler to a missing Image.");
+            return null;
+        }
+
+        Button button = image.GetComponent<Button>() ?? image.gameObject.AddComponent<Button>();
+        if (button == null)
+        {
+            Debug.LogError($"UITheme: could not add Button to '{image.name}'.");
+            return null;
+        }
+
+        button.targetGraphic = image;
+
+        // Button.onClick is normally allocated by Unity's field initializer.
+        // Guard it anyway because a malformed/old scene must not stop every
+        // subsequent handler from being wired.
+        if (button.onClick == null)
+            button.onClick = new Button.ButtonClickedEvent();
+
+        // C# closures are not serialized. This runs on every startup for scene
+        // content, so old runtime callbacks must not accumulate.
+        button.onClick.RemoveAllListeners();
+        if (onClick != null) button.onClick.AddListener(onClick);
+        return button;
+    }
+
     public static Button Button(string name, Transform parent, string label, float fontSize,
         Color background, Color textColor, UnityEngine.Events.UnityAction onClick)
     {
         Image img = Image(name, parent, background);
         if (img == null) return null;
-        Button button = img.GetComponent<Button>() ?? img.gameObject.AddComponent<Button>();
-        button.targetGraphic = img;
+        Button button = BindClick(img, onClick);
+        if (button == null) return null;
+
         var colors = button.colors;
         colors.normalColor = Color.white;
         colors.highlightedColor = new Color(1.12f, 1.12f, 1.12f, 1f);
         colors.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
         colors.selectedColor = Color.white;
         button.colors = colors;
-        // Clear first: on an adopted button this method runs again every play,
-        // and AddListener stacks, so a second run would fire the handler twice.
-        button.onClick.RemoveAllListeners();
-        if (onClick != null) button.onClick.AddListener(onClick);
 
         var text = Text("Label", img.transform, label, fontSize, textColor, FontStyles.Bold, TextAlignmentOptions.Center);
         Stretch(text.rectTransform);
