@@ -97,3 +97,10 @@ replaced by our own in-tree integration).
       vShooterWeapon prefab variants (DB slots already Invector-based)
 - [ ] Ragdoll + locational damage components for MonKent (VBot has them)
 - [ ] Playtest matrix: solo, LAN host+client, FP/TP switch, parachute, respawn
+
+## Direction change (user, 2026-09-27): THIRD PERSON FIRST
+The game ships as a third person shooter on Invector's native, fully tuned TP
+path. Sessions always start in third person (CODShooterInput.restoreViewFromPrefs
+is off). The native FP integration stays in the camera/character stack and V
+still switches views, but FP positioning/polish is deferred until the TP game
+looks and plays right.
