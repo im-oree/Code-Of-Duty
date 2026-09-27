@@ -28,6 +28,11 @@ set; the in-Editor compile covers it.
 - `Tools/verify-csharp.sh` — fast C# compile check.
 
 ### Phase 1 (in progress) — input + character authority
+
+#### First build increment — deterministic perspective weapon posing
+- `WeaponMovementPose` now applies third-person sprint/tac-sprint offsets from a cached authored rest pose in local space instead of accumulating world rotation and position every frame.
+- Disabling/despawning the pose component restores the original third-person weapon transform.
+- This removes a high-impact source of apparent weapon switching/detachment during tactical sprint and keeps first- and third-person presentation reversible.
 | File | What it is |
 |---|---|
 | `Assets/Scripts/Input/IInputSource.cs` | `IInputSource` + `InputActionId` — the only vocabulary gameplay reads |
