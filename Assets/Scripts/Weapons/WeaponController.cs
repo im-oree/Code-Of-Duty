@@ -58,15 +58,25 @@ public class WeaponController : MonoBehaviour
     public bool changed; // true if weapon changed
     public bool canShoot;
 
+    void Awake()
+    {
+        if (animator == null) animator = GetComponentInChildren<Animator>();
+        if (eventsCenter == null && animator != null)
+            eventsCenter = animator.GetComponent<EventsCenter>();
+        if (eventsCenter == null) eventsCenter = GetComponentInParent<EventsCenter>();
+        if (offsetForGun == null) offsetForGun = transform;
+    }
+
     void OnEnable()
     {
-        var gunchangeSMBs = animator.GetBehaviours<GunChange_SMB>(); // get gunchange state machine behaviours from animator
-        foreach (var gunchangeSMB in gunchangeSMBs)
+        if (animator != null)
         {
-            gunchangeSMB.setWeaponController(this); // set this as gunchangers in state machine behaviours from animator
+            var gunchangeSMBs = animator.GetBehaviours<GunChange_SMB>();
+            foreach (var gunchangeSMB in gunchangeSMBs)
+                if (gunchangeSMB != null) gunchangeSMB.setWeaponController(this);
         }
 
-        eventsCenter = animator.transform.GetComponent<EventsCenter>();
+        if (eventsCenter == null) return;
 
         // subscribes on events
         eventsCenter.OnRightHandIKWeightUpdate += ApplyRightHandIkWeight;
@@ -81,6 +91,8 @@ public class WeaponController : MonoBehaviour
 
     private void OnDisable()
     {
+        if (eventsCenter == null) return;
+
         eventsCenter.OnRightHandIKWeightUpdate -= ApplyRightHandIkWeight;
         eventsCenter.OnLeftHandIKWeightUpdate -= ApplyLeftHandIkWeight;
         eventsCenter.OnGunWeightUpdate -= ApplyGunActiveWeight;
@@ -158,9 +170,13 @@ public class WeaponController : MonoBehaviour
 
     void ApplyGunPositionOffsetInHands(float active)
     {
-        var weapon = GETCurrentWeapon;
-        if (weapon == null) { WarnMissingWeaponOnce(); return; }
+        // Animation events can arrive while a weapon is being replaced. Check the destination
+        // first, then resolve the optional weapon; this keeps a cosmetic event harmless during
+        // spawn, respawn, and loadout swaps.
         if (offsetForGun == null) return;
+
+        var weapon = GETCurrentWeapon;
+        if (weapon == null) return;
         offsetForGun.localPosition = weapon.inHandsPositionOffset * active;
     }
 

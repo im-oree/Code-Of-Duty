@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using CodeOfDuty.Input;
 
 /// <summary>
@@ -16,13 +16,24 @@ public class ViewingResistance : MonoBehaviour
 
     CharacterInput characterInput;
 
+    private void Awake()
+    {
+        // Keep the component safe on scene-spawned characters and older prefabs where one
+        // reference was not serialized. These are cosmetic references, so the weapon rig should
+        // degrade gracefully instead of taking down the animation event chain.
+        if (weaponController == null) weaponController = GetComponentInParent<WeaponController>();
+        if (eventsCenter == null) eventsCenter = GetComponentInParent<EventsCenter>();
+        if (pivot == null) pivot = transform;
+    }
+
     private void OnEnable()
     {
-        eventsCenter.OnWeaponChange += WeaponChangeCheck;
+        if (eventsCenter != null) eventsCenter.OnWeaponChange += WeaponChangeCheck;
+        WeaponChangeCheck(false);
     }
     private void OnDisable()
     {
-        eventsCenter.OnWeaponChange -= WeaponChangeCheck;
+        if (eventsCenter != null) eventsCenter.OnWeaponChange -= WeaponChangeCheck;
     }
 
     void WeaponChangeCheck(bool changing)
@@ -43,9 +54,11 @@ public class ViewingResistance : MonoBehaviour
 
         Vector2 look = characterInput.Look;
 
+        if (pivot == null) return;
+
         pivot.localRotation = Quaternion.Lerp(
             pivot.localRotation,
             Quaternion.Euler(-look.y * resistanceForce, look.x * resistanceForce, 0f),
-            resistanceSmoothing * Time.deltaTime);
+            Mathf.Clamp01(resistanceSmoothing * Time.deltaTime));
     }
 }
