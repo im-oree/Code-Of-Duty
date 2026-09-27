@@ -58,17 +58,33 @@ public class Input_Handler : MonoBehaviour
 
         var input = characterInput.Source;
 
-        TryShoot(input);
-
-        bodySlope_Handler.setInput(-input.Lean);
-
+        // Resolve inventory intent before firing. Some input backends can report a button edge
+        // and a mouse edge in the same frame (especially when a binding was just remapped). The
+        // old order fired first and then changed slots, which made a normal assault-rifle shot
+        // appear to holster the rifle and draw slot two. A weapon selection owns that frame; it
+        // must never be allowed to double as a fire frame.
+        bool selectedWeapon = false;
         // 2-weapon loadout: 1 = primary, 2 = secondary, 3 = melee (unarmed)
         if (input.Pressed(InputActionId.SlotPrimary))
+        {
             weaponController.ToChange(1);
-        if (input.Pressed(InputActionId.SlotSecondary))
+            selectedWeapon = true;
+        }
+        else if (input.Pressed(InputActionId.SlotSecondary))
+        {
             weaponController.ToChange(2);
+            selectedWeapon = true;
+        }
         if (input.Pressed(InputActionId.SlotMelee))
+        {
             weaponController.SetMelee(!weaponController.MeleeMode);
+            selectedWeapon = true;
+        }
+
+        if (!selectedWeapon)
+            TryShoot(input);
+
+        bodySlope_Handler.setInput(-input.Lean);
 
         if (input.Pressed(InputActionId.Interact) && weaponPickUp != null)
         {

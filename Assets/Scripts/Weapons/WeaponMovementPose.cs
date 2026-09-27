@@ -81,6 +81,15 @@ public class WeaponMovementPose : MonoBehaviour
     Transform offHandOriginalTarget;
     Transform tuckTarget;
 
+    // Third-person posing must be absolute. The previous implementation multiplied the
+    // transform every frame, so a three-second tac sprint accumulated thousands of degrees and
+    // metres of drift. That made the weapon look as if it had detached or switched slots even
+    // though the active weapon never changed.
+    Transform posedThirdPersonWeapon;
+    Vector3 thirdPersonRestLocalPosition;
+    Quaternion thirdPersonRestLocalRotation;
+    bool thirdPersonRestCaptured;
+
     /// <summary>0..1 sprint (non-tac) pose weight — exposed for the third-person body rig.</summary>
     public float SprintBlend => sprintBlend;
 
@@ -100,6 +109,19 @@ public class WeaponMovementPose : MonoBehaviour
     // NOTE: ownership must be checked LIVE — FishNet assigns it after Start(),
     // so caching a bool there would leave this system dead forever.
     bool IsLocal => netObject == null || netObject.IsOwner;
+
+    void OnDisable()
+    {
+        // Never leave a presentation pose baked into the authored third-person rig when the
+        // component is disabled, the player is despawned, or a camera perspective changes.
+        if (posedThirdPersonWeapon != null && thirdPersonRestCaptured)
+        {
+            posedThirdPersonWeapon.localPosition = thirdPersonRestLocalPosition;
+            posedThirdPersonWeapon.localRotation = thirdPersonRestLocalRotation;
+        }
+        thirdPersonRestCaptured = false;
+        posedThirdPersonWeapon = null;
+    }
 
     Transform CharacterRoot =>
         characterMove != null ? characterMove.transform : transform.root;
@@ -235,18 +257,22 @@ public class WeaponMovementPose : MonoBehaviour
     {
         if (thirdPersonWeapon == null) return;
 
-        Vector3 up = CharacterRoot.up;
-        Vector3 right = CharacterRoot.right;
-        Vector3 forward = CharacterRoot.forward;
+        if (posedThirdPersonWeapon != thirdPersonWeapon || !thirdPersonRestCaptured)
+        {
+            posedThirdPersonWeapon = thirdPersonWeapon;
+            thirdPersonRestLocalPosition = thirdPersonWeapon.localPosition;
+            thirdPersonRestLocalRotation = thirdPersonWeapon.localRotation;
+            thirdPersonRestCaptured = true;
+        }
 
-        Quaternion poseRotation =
-            Quaternion.AngleAxis(-euler.x * thirdPersonPoseScale, right) *
-            Quaternion.AngleAxis(euler.y * thirdPersonPoseScale, up) *
-            Quaternion.AngleAxis(euler.z * thirdPersonPoseScale, forward);
-
-        thirdPersonWeapon.rotation = poseRotation * thirdPersonWeapon.rotation;
-        thirdPersonWeapon.position += (right * position.x + up * position.y + forward * position.z)
-                                      * thirdPersonPoseScale;
+        // Store and apply in local space. The authored rest pose is the base every frame;
+        // this makes the pose deterministic, reversible, and identical at any frame rate.
+        thirdPersonWeapon.localPosition = thirdPersonRestLocalPosition + position * thirdPersonPoseScale;
+        Quaternion poseRotation = Quaternion.Euler(
+            -euler.x * thirdPersonPoseScale,
+            euler.y * thirdPersonPoseScale,
+            euler.z * thirdPersonPoseScale);
+        thirdPersonWeapon.localRotation = thirdPersonRestLocalRotation * poseRotation;
     }
 
     /// <summary>
