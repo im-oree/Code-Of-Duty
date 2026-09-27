@@ -25,7 +25,7 @@ namespace CodeOfDuty.Input
     /// </summary>
     [DefaultExecutionOrder(-100)]
     [DisallowMultipleComponent]
-    public class CharacterInput : MonoBehaviour
+    public class CharacterInput : MonoBehaviour, ILocalOnly
     {
         IInputSource source;
         BotInputSource bot;

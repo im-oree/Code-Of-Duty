@@ -140,17 +140,74 @@ public class WeaponController : MonoBehaviour
         // if (!changing && GETCurrentWeapon.aimPoint != null) aimPointEffector.getFromTransform = GETCurrentWeapon.aimPoint.transform;
     }
 
-    void ApplyGunOffsetRelativeToParent(int handId, int applyOffset) => GETCurrentSlot.ApplyHandOffset(handId, applyOffset == 1);
+    /* Animation-event handlers.
+     *
+     * These are driven by the animator, which knows nothing about whether a gun is actually in
+     * the slot right now -- a loadout swap, a melee stance or a half-initialised spawn can all
+     * leave it briefly empty. Each one therefore checks before it dereferences. They used to
+     * assume a weapon was always present, and the resulting null reference did far more damage
+     * than losing one frame of a cosmetic offset: it aborted the rest of the draw sequence and
+     * left the player empty-handed. */
 
-    void ApplyGunPositionOffsetInHands(float active) => offsetForGun.localPosition = GETCurrentWeapon.inHandsPositionOffset * active;
+    void ApplyGunOffsetRelativeToParent(int handId, int applyOffset)
+    {
+        var slot = GETCurrentSlot;
+        if (slot == null) return;
+        slot.ApplyHandOffset(handId, applyOffset == 1);
+    }
 
-    void ApplyRightHandIkWeight(float weight) => rightHandIK.weight = weight;
+    void ApplyGunPositionOffsetInHands(float active)
+    {
+        var weapon = GETCurrentWeapon;
+        if (weapon == null) { WarnMissingWeaponOnce(); return; }
+        if (offsetForGun == null) return;
+        offsetForGun.localPosition = weapon.inHandsPositionOffset * active;
+    }
 
-    void ApplyLeftHandIkWeight(float weight) => leftHandIK.weight = weight;
+    bool warnedMissingWeapon;
 
-    void ApplyGunParent(float handActive) => GETCurrentSlot.HandActive = handActive;
+    /// <summary>
+    /// Say so, once, when a draw event runs against an empty slot. The guards above keep the
+    /// rest of the sequence alive, but an empty slot is still a real problem worth seeing --
+    /// silently coping with it would just hide the next version of this bug.
+    /// </summary>
+    void WarnMissingWeaponOnce()
+    {
+        if (warnedMissingWeapon) return;
+        warnedMissingWeapon = true;
 
-    void ApplyGunActiveWeight(float weight) => GETCurrentSlot.weight = weight;
+        int slotCount = slots != null ? slots.Length : 0;
+        var slot = GETCurrentSlot;
+        Debug.LogWarning(
+            $"{name}: weapon draw ran with no Weapon in the active slot " +
+            $"(activeID={activeID}, nextID={nextID}, slots={slotCount}, " +
+            $"slotObject={(slot != null ? slot.name : "null")}). " +
+            "The draw will continue so the gun is not left holstered, but this slot should " +
+            "contain a weapon. Most likely a loadout swap destroyed one without replacing it.",
+            this);
+    }
+
+    void ApplyRightHandIkWeight(float weight)
+    {
+        if (rightHandIK != null) rightHandIK.weight = weight;
+    }
+
+    void ApplyLeftHandIkWeight(float weight)
+    {
+        if (leftHandIK != null) leftHandIK.weight = weight;
+    }
+
+    void ApplyGunParent(float handActive)
+    {
+        var slot = GETCurrentSlot;
+        if (slot != null) slot.HandActive = handActive;
+    }
+
+    void ApplyGunActiveWeight(float weight)
+    {
+        var slot = GETCurrentSlot;
+        if (slot != null) slot.weight = weight;
+    }
 
     void ApplyHandsIKTarget(int handId, string pointName)
     {
@@ -279,6 +336,8 @@ public class WeaponController : MonoBehaviour
     IEnumerator MeleeBlend(bool active)
     {
         var slot = GETCurrentSlot;
+        if (slot == null || rightHandIK == null || leftHandIK == null) yield break;
+
         float startSlot = slot.weight;
         float startR = rightHandIK.weight;
         float startL = leftHandIK.weight;

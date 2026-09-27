@@ -58,7 +58,10 @@ public class WeaponSight_hangler : MonoBehaviour
 
     void UpdateSights()
     {
-        weaponSights.AddRange(weaponController.GETCurrentWeapon.weaponSights);
+        var currentWeapon = weaponController != null ? weaponController.GETCurrentWeapon : null;
+        if (currentWeapon == null) return;   // slot briefly empty around a loadout swap
+
+        weaponSights.AddRange(currentWeapon.weaponSights);
 
         foreach (var sight in weaponSights)
         {

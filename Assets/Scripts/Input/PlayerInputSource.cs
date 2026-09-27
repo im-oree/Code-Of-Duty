@@ -31,7 +31,7 @@ namespace CodeOfDuty.Input
     /// the camera multiplies by delta time — so adding pad support does not change mouse feel.
     /// </summary>
     [DisallowMultipleComponent]
-    public class PlayerInputSource : MonoBehaviour, IInputSource
+    public class PlayerInputSource : MonoBehaviour, IInputSource, ILocalOnly
     {
         [Header("Gamepad look")]
         [Tooltip("Multiplier on the shared look sensitivity when using a stick. "

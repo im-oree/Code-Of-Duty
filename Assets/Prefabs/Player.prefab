@@ -5611,6 +5611,8 @@ MonoBehaviour:
   edgeSlipVelocity: {x: 0, y: 0, z: 0}
   standAnimReferenceSpeed: 3
   crouchAnimReferenceSpeed: 1.1
+  movementTuning: {fileID: 11400000, guid: c48a2f61d90b4f24a95e37b6c0148d72, type: 2}
+
 --- !u!114 &5217620020292305506
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5663,10 +5665,6 @@ MonoBehaviour:
   retargetOffHand: 1
   thirdPersonWeapon: {fileID: 0}
   thirdPersonPoseScale: 0.65
-  tacSprintEnabled: 1
-  doubleTapWindow: 0.35
-  tacSprintDuration: 3.5
-  tacSprintSpeedMultiplier: 1.22
   blendSpeed: 7
   wobbleAmount: 0.35
   wobbleFrequency: 7.5

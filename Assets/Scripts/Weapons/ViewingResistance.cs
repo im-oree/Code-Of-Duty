@@ -6,7 +6,7 @@ using CodeOfDuty.Input;
 /// off-axis before it settles. Driven by this character's look intent rather than by the mouse,
 /// so a bot's weapon sways exactly like a player's instead of sitting unnaturally rigid.
 /// </summary>
-public class ViewingResistance : MonoBehaviour
+public class ViewingResistance : MonoBehaviour, ILocalOnly
 {
     public WeaponController weaponController;
     public EventsCenter eventsCenter;
@@ -27,11 +27,14 @@ public class ViewingResistance : MonoBehaviour
 
     void WeaponChangeCheck(bool changing)
     {
-        if (!changing)
-        {
-            resistanceForce = weaponController.GETCurrentWeapon.resistanceForce;
-            resistanceSmoothing = weaponController.GETCurrentWeapon.resistanceSmoothing;
-        }
+        if (changing) return;
+
+        // The slot can legitimately be empty for a frame around a loadout swap.
+        var weapon = weaponController != null ? weaponController.GETCurrentWeapon : null;
+        if (weapon == null) return;
+
+        resistanceForce = weapon.resistanceForce;
+        resistanceSmoothing = weapon.resistanceSmoothing;
     }
 
     private void Update()

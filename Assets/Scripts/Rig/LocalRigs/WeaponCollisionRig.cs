@@ -39,7 +39,9 @@ public class WeaponCollisionRig : LocalRig
     {
         if (!change)
         {
-            Weapon weapon = weaponController.GETCurrentWeapon;
+            Weapon weapon = weaponController != null ? weaponController.GETCurrentWeapon : null;
+            if (weapon == null) return;
+
             detectionLength = weapon.collisionDetectionLength;
             maxOffset = weapon.maxZPositionOffsetCollision;
             rayPositionOffset = weapon.inHandsPositionOffset;

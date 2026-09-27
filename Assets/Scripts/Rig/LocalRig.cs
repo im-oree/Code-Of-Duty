@@ -50,7 +50,6 @@ public abstract class LocalRig : MonoBehaviour
         foreach (var rigExtension in AfterLocalRigExecuteExtensions)
         {
             rigExtension.Execute();
-            Debug.Log("bn" + rigExtension.updateMethod);
         }
     }
 

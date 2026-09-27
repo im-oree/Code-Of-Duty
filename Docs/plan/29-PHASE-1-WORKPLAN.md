@@ -214,8 +214,8 @@ The LAN system is reported as mostly working. Tasks:
  8. menu: generate-frontend-scene editor command
  9. menu: operator idle animation + weapon attach                          ← D3
 10. input: PlayerInputSource complete; adopt IInputSource everywhere       ← D6  DONE
-11. move: tac-sprint state into CharacterMove + MovementTuning             ← F5/F7
-12. anim: PerspectiveSync + TacSprintPose + ViewmodelPoseDriver            ← F1/F2/F3
+11. move: tac-sprint state into CharacterMove + MovementTuning             ← F5/F7  DONE
+12. anim: PerspectiveSync + TacSprintPose + ViewmodelPoseDriver            ← F1/F2/F3  DONE
 13. anim: BodyPoseDriver + additive layer + hand IK; delete WeaponMovementPose ← F6/F8
 14. harness: tacsprint sequence; iterate to approval                       ← D5 closed
 15. ui: theme asset + component library
@@ -225,6 +225,111 @@ The LAN system is reported as mostly working. Tasks:
 19. net: LAN discovery hardening + net harness
 20. docs: update every spec doc with what actually shipped
 ```
+
+### 1.7 Sprint ownership moved out of the viewmodel — DONE (item 11)
+
+`WeaponMovementPose` is a cosmetic component: its job is tilting the gun. It also happened to
+own the sprint rules. That had four consequences, all fixed here:
+
+* **F5 — movement decided by a cosmetic component.** The double-tap timers, the tac-sprint
+  countdown and the write to `characterMove.sprintSpeedMultiplier` all lived there. A character
+  without the component could not tac sprint at all, which included every bot. The component
+  also gated itself on `IsLocal`, so on every non-owned character the sprint state simply did
+  not exist.
+* **F7 — two thresholds for one decision.** `StandState` sprinted at `inputVector.y > 0`, the
+  tac-sprint check needed `input.Move.y > 0.1`, and `IsSprinting` thresholded a *cosmetic blend*
+  at `0.35` while the locomotion report thresholded the same blend at `0.5`. There was a band of
+  stick deflection where the character sprinted but could never tac sprint, and another where
+  fire was blocked but the state channel disagreed.
+* **Locomotion was reported from animation weights**, i.e. the state channel lagged the cosmetic
+  it was supposed to be driving — and it only ever reported `Idle`, `Sprint` or `TacSprint`, so
+  `Walk` was never reported by anything.
+* **Tuning scattered across prefabs.** Speed multiplier and durations were serialized per
+  character.
+
+Now: `CharacterMove.UpdateSprintState()` runs at the top of `Update()`, before the state ticks,
+and is the single writer of the locomotion channel. `StandState` and `WeaponMovementPose` both
+read `IsSprinting` / `IsTacSprinting`. Numbers live on `Assets/Settings/MovementTuning.asset`
+(`MovementTuning`), with a built-in fallback so a missing reference degrades instead of throwing.
+
+Two details worth keeping in mind for item 12:
+
+* There is no `Walk → TacSprint` edge in the transition table, so engaging tac sprint steps
+  through `Sprint`. That step is guarded by a `Locomotion == TacSprint` early-out — without it
+  the pair re-fires every frame and oscillates the Carry channel between `Lowered` and `Ready`.
+* Sprint is blocked by `StandState.walk`, which is driven by ADS from `CameraSwitcher`. That is
+  why aiming cancels a sprint, and it is the one piece of sprint input still living outside
+  `CharacterMove`.
+
+### 1.8 One pose, applied in the right phase — DONE (item 12)
+
+The first-person path was already correct: `WeaponSlotRig.Execute()` sets the weapon's position
+and rotation *absolutely* from the hand pointers and only then adds the pose, so it cannot
+accumulate. The third-person path did not do that, and the off-hand had a lifetime bug.
+
+* **F1/F2 — the third-person weapon drifted away.** `ApplyThirdPersonPose` ran in `Update()`
+  and did `tp.rotation = pose * tp.rotation`. Writing `.rotation` writes the LOCAL rotation, and
+  the animator rewrites the parent BONE, never this child — so last frame's pose was still in
+  the local rotation when this frame's was multiplied onto it. Once per frame, forever. Fixed by
+  capturing the rest pose, restoring it before posing, and moving all transform writes to
+  `LateUpdate` under `[DefaultExecutionOrder(100)]` so they land after the animator *and* after
+  `RigExecutor` (order 0). Currently latent — `thirdPersonWeapon` is unassigned on the prefab —
+  but it is the exact bug item 13's body driver would have inherited.
+* **F3 — the muzzle clamp was not a clamp.** `maxMuzzleUpDegrees` was applied to `tacEuler.x`
+  *before* blending and *before* the wobble, so the sprint offset and the wobble were both free
+  to push past it. Now applied to the final value. With the shipped numbers the ceiling is not
+  actually reached (peak ≈ 25° of 46°), so this is a correctness fix, not a visible one — but it
+  is what makes the field mean what it says once someone tunes it.
+* **Off-hand latched to the tuck point.** The original IK target was captured once and only
+  refreshed when null. Swapping weapons mid tac-sprint captured either the previous gun's grip
+  or — if the hand was tucked at that moment — the tuck transform itself, so "restore the
+  original" restored the tuck and the left hand never returned to the handguard. Now the
+  original is tracked every frame, skipping our own tuck transform.
+* **Per-frame `Debug.Log` in the rig pipeline.** `LocalRig.AfterLocalRigUpdate()` logged a
+  string per extension per character per frame. Removed.
+
+The pose is now computed once per frame in `Update` and published as `PosePosition`/`PoseEuler`;
+first person, third person and the off-hand all read those, so the perspectives cannot disagree.
+
+**Still blocked:** the visible quality of tac sprint cannot be judged until `MonKent.fbx` is
+re-exported with baking enabled — 10 of its 46 clips are fully flat and the best is 7.2%
+non-flat, so the body does not move regardless of what the pose layer does. Items 13 and 14
+are gated on that.
+
+### 1.9 Remote bodies were reading this machine's keyboard — DONE
+
+Correcting an earlier note in this document: `NetComponentEnabler` **is** wired up. It lives on
+`Assets/Resources/PlayerNet Variant.prefab`, the networked variant of `Player.prefab`, which is
+what `CODNetworkManager` actually spawns. `Player.prefab` itself has no `NetworkObject` and is
+not the networked prefab. The earlier claim that nothing gated remote proxies was wrong.
+
+What *was* wrong is that the gating list had gone stale. It names seven components by object
+reference — `CharacterMove`, `Input_Handler`, `CameraSwitcher`, `CameraController`,
+`CinemachinePOVExtension`, `WeaponSight_hangler` and one more — and it was authored before
+`CharacterInput`, `PlayerInputSource` and `WeaponMovementPose` were added to the base prefab.
+None of those three are in it. `ViewingResistance` was never in it either and has no ownership
+check of its own, so on every remote body in a match it was reading the local player's input.
+Invisible while testing solo; obvious the moment a second player joins.
+
+Rather than add four more entries to a list that has already proven it cannot be kept correct
+by hand, the fact moved next to the code:
+
+* **`ILocalOnly`** — a marker interface. `NetComponentEnabler` finds every implementor at spawn
+  and disables it. Implemented by `ViewingResistance`, `CharacterInput` and `PlayerInputSource`.
+  (`GrenadeThrower` already self-gates on `IsOwner`; `WeaponMovementPose` on `IsLocal`.)
+* The serialized lists stay, because native components like `Camera` and whole GameObjects
+  cannot implement an interface. They are now null-guarded — an entry whose component was
+  deleted serialized as null and would have thrown mid-loop, leaving a half-disabled body.
+* **`Tools/verify-input-seam.mjs` grew a second check**: any component reading player intent
+  must be gated by `ILocalOnly`, an `IsOwner` check, or `NetOwnership.IsLocal`. Verified to fail
+  (exit 1, naming the file) when the marker is removed from `ViewingResistance`.
+
+**Known issue, recorded for the bots phase:** on a dedicated server `NetComponentEnabler`
+disables local-only components on *every* body, which would switch off a bot's own movement and
+input. `ComponentsDisaber()` now early-returns when the body is bot-driven, but that reads the
+input source — so a bot spawner must attach the `BotInputSource` *before* `ServerManager.Spawn`.
+Nothing depends on this yet because bots do not exist; it is written down because it will be
+load-bearing the moment they do.
 
 ## Phase 1 exit criteria
 

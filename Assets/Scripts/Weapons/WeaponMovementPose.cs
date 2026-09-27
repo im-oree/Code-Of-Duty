@@ -1,5 +1,4 @@
 using UnityEngine;
-using CodeOfDuty.Input;
 
 /// <summary>
 /// COD-style procedural weapon handling for movement states — no authored clips needed,
@@ -20,6 +19,18 @@ using CodeOfDuty.Input;
 /// Purely local + cosmetic except the tac-sprint speed multiplier, which the server sees
 /// through the normal movement sync.
 /// </summary>
+/// <remarks>
+/// EXECUTION ORDER MATTERS HERE, and getting it wrong is what broke the third-person pose.
+/// The frame goes: Update -> animator writes bones -> LateUpdate. <see cref="RigExecutor"/>
+/// runs at the default order (0) in LateUpdate and is what actually places the weapon.
+///
+/// So the work is split. <see cref="Update"/> only produces DATA (the blends, and the pose
+/// handed to <see cref="WeaponSlotRig"/>), which is safe because the rig reads it later the
+/// same frame. Anything that writes a TRANSFORM waits for <see cref="LateUpdate"/>, which at
+/// order 100 runs after the animator and after the rig, so it poses a body that has already
+/// been placed for this frame instead of one still holding last frame's values.
+/// </remarks>
+[DefaultExecutionOrder(100)]
 public class WeaponMovementPose : MonoBehaviour
 {
     public WeaponController weaponController;
@@ -56,12 +67,7 @@ public class WeaponMovementPose : MonoBehaviour
     [Tooltip("How much of the FP pose the TP weapon receives.")]
     public float thirdPersonPoseScale = 0.65f;
 
-    [Header("Tac-sprint rules")]
-    [Tooltip("Master switch for tactical sprint.")]
-    public bool tacSprintEnabled = true;
-    public float doubleTapWindow = 0.35f;
-    public float tacSprintDuration = 3.5f;
-    public float tacSprintSpeedMultiplier = 1.22f;
+    // Tac-sprint rules (enable, double-tap window, duration, speed) now live on MovementTuning.
 
     [Header("Feel")]
     public float blendSpeed = 7f;
@@ -70,10 +76,6 @@ public class WeaponMovementPose : MonoBehaviour
 
     float sprintBlend, tacBlend;
     float sprintVel, tacVel;
-    bool tacActive;
-    float lastSprintTap = -10f;
-    float sprintHoldStart = -10f;
-    float tacEndTime;
     FishNet.Object.NetworkObject netObject;
     WeaponSlotRig lastPosedSlot;
 
@@ -81,14 +83,34 @@ public class WeaponMovementPose : MonoBehaviour
     Transform offHandOriginalTarget;
     Transform tuckTarget;
 
+    // Rest pose of the third-person weapon, so the pose above can be absolute.
+    Transform tpBaseOwner;
+    Vector3 tpBaseLocalPosition;
+    Quaternion tpBaseLocalRotation;
+
+    /// <summary>
+    /// The pose for this frame, in character space, computed once in <see cref="Update"/> and
+    /// read by every consumer. First person, third person and the off-hand all take THIS, so
+    /// the perspectives cannot drift apart: there is one answer per frame, not one per reader.
+    /// </summary>
+    public Vector3 PosePosition { get; private set; }
+
+    /// <inheritdoc cref="PosePosition"/>
+    public Vector3 PoseEuler { get; private set; }
+
     /// <summary>0..1 sprint (non-tac) pose weight — exposed for the third-person body rig.</summary>
     public float SprintBlend => sprintBlend;
 
     /// <summary>0..1 tactical-sprint pose weight — exposed for the third-person body rig.</summary>
     public float TacBlend => tacBlend;
 
-    /// <summary>True while the player is sprint/tac-sprint moving (used to block firing).</summary>
-    public bool IsSprinting => sprintBlend > 0.35f || tacBlend > 0.35f;
+    /// <summary>
+    /// True while the player is sprinting. Forwarded from <see cref="CharacterMove"/> so that
+    /// callers blocking fire get the same answer the movement system acted on -- this used to
+    /// threshold the cosmetic blend at 0.35 while the state report thresholded it at 0.5, so
+    /// there was a window where the player counted as sprinting for one and not the other.
+    /// </summary>
+    public bool IsSprinting => characterMove != null && characterMove.IsSprinting;
 
     void Awake()
     {
@@ -104,60 +126,18 @@ public class WeaponMovementPose : MonoBehaviour
     Transform CharacterRoot =>
         characterMove != null ? characterMove.transform : transform.root;
 
-    CharacterInput characterInput;
-
     void Update()
     {
         if (!IsLocal || weaponController == null || characterMove == null) return;
 
-        if (characterInput == null) characterInput = CharacterInput.For(this);
-        var input = characterInput.Source;
-
-        // ---------------- state detection ----------------
-        // Reads intent, not the keyboard: this used to be Input.GetAxisRaw("Vertical"), which
-        // meant a stick-forward player on a gamepad could sprint but could never tac-sprint.
-        bool movingForward = input.Move.y > 0.1f;
-        bool sprintHeld = input.Held(InputActionId.Sprint);
-        bool sprinting = sprintHeld && movingForward && characterMove.isGrounded
-            && !weaponController.MeleeMode
-            && characterMove.currentState == characterMove.standState; // never pose while crouched/sliding
-
-        if (input.Pressed(InputActionId.Sprint))
-        {
-            if (InputBindings.TacSprintMode == 0 &&
-                Time.time - lastSprintTap <= doubleTapWindow && movingForward)
-            {
-                tacActive = true;
-                tacEndTime = Time.time + tacSprintDuration;
-            }
-            lastSprintTap = Time.time;
-            sprintHoldStart = Time.time;
-        }
-
-        // auto mode: tac sprint engages after sprinting continuously for a moment
-        if (InputBindings.TacSprintMode == 1 && sprinting && !tacActive &&
-            Time.time - sprintHoldStart > 1.1f)
-        {
-            tacActive = true;
-            tacEndTime = Time.time + tacSprintDuration;
-        }
-
-        // tac sprint breaks on: stopping, timer, firing, aiming
-        if (tacActive && (!sprinting || Time.time > tacEndTime ||
-            input.Held(InputActionId.Fire) || input.Held(InputActionId.Aim)))
-            tacActive = false;
-
-        if (!tacSprintEnabled) tacActive = false;
-
-        // report to the single authority (weapon handling state)
-        if (characterMove.characterState != null)
-        {
-            var wanted = tacBlend > 0.5f ? CodeOfDuty.Character.LocomotionState.TacSprint
-                       : sprintBlend > 0.5f ? CodeOfDuty.Character.LocomotionState.Sprint
-                       : CodeOfDuty.Character.LocomotionState.Idle;
-            if (characterMove.currentState == characterMove.standState)
-                characterMove.characterState.RequestLocomotion(wanted, "WeaponMovementPose.sprint");
-        }
+        // ---------------- read the movement decision ----------------
+        // This component used to make this decision itself, from its own copy of the input and
+        // its own timers. It is a cosmetic component, so that put the rules that decide how fast
+        // the character runs inside the thing that tilts the gun -- and the two copies of the
+        // rules disagreed about how far forward the stick had to be. CharacterMove owns it now;
+        // this just draws the result.
+        bool sprinting = characterMove.IsSprinting;
+        bool tacActive = characterMove.IsTacSprinting;
 
         // ---------------- blending (never snaps) ----------------
         float sprintTarget = sprinting && !tacActive ? 1f : 0f;
@@ -165,19 +145,13 @@ public class WeaponMovementPose : MonoBehaviour
         sprintBlend = Mathf.SmoothDamp(sprintBlend, sprintTarget, ref sprintVel, 1f / blendSpeed);
         tacBlend = Mathf.SmoothDamp(tacBlend, tacTarget, ref tacVel, 1f / blendSpeed);
 
-        // ---------------- speed ----------------
-        characterMove.sprintSpeedMultiplier = 1f + (tacSprintSpeedMultiplier - 1f) * tacBlend;
-
         // ---------------- weapon pose (first person) ----------------
+        // Data only: WeaponSlotRig consumes this from RigExecutor.LateUpdate, later this frame.
         Vector3 posePos;
         Vector3 poseEuler = ComputePoseEuler(out posePos);
+        PosePosition = posePos;
+        PoseEuler = poseEuler;
         ApplyToSlot(posePos, poseEuler);
-
-        // ---------------- weapon pose (third person) ----------------
-        ApplyThirdPersonPose(posePos, poseEuler);
-
-        // ---------------- off-hand ----------------
-        UpdateOffHand();
 
         // ---------------- camera movement rumble ----------------
         Vector3 v = characterMove.characterController != null
@@ -189,13 +163,27 @@ public class WeaponMovementPose : MonoBehaviour
         CameraShake.SetMovementRumble(rumble);
     }
 
+    /// <summary>
+    /// Everything that writes a transform. Runs after the animator and after the rig (see the
+    /// execution-order note on the class), so it poses a skeleton that is already in this
+    /// frame's position rather than last frame's.
+    /// </summary>
+    void LateUpdate()
+    {
+        if (!IsLocal || weaponController == null || characterMove == null) return;
+
+        // Reuse this frame's pose rather than recomputing it. Recomputing would re-sample the
+        // wobble noise and hand the two perspectives slightly different answers.
+        ApplyThirdPersonPose(PosePosition, PoseEuler);
+        UpdateOffHand();
+    }
+
     /// <summary>Blends sprint and tac-sprint offsets, clamps the muzzle-up, adds movement wobble.</summary>
     Vector3 ComputePoseEuler(out Vector3 position)
     {
         Weapon weapon = weaponController.GETCurrentWeapon;
         bool oneHanded = weapon != null && weapon.slotType == Weapon.SlotType.pistol;
         Vector3 tacEuler = oneHanded ? tacOneHandedEulerOffset : tacEulerOffset;
-        tacEuler.x = Mathf.Min(tacEuler.x, maxMuzzleUpDegrees);
 
         float effort = sprintBlend * 0.5f + tacBlend;
         float t = Time.time * wobbleFrequency;
@@ -205,7 +193,15 @@ public class WeaponMovementPose : MonoBehaviour
             Mathf.PerlinNoise(t, 13.1f) - 0.5f) * (wobbleAmount * effort);
 
         position = sprintPositionOffset * sprintBlend + tacPositionOffset * tacBlend;
-        return sprintEulerOffset * sprintBlend + tacEuler * tacBlend + wobble;
+
+        Vector3 result = sprintEulerOffset * sprintBlend + tacEuler * tacBlend + wobble;
+
+        // Clamp the ANSWER. This used to clamp `tacEuler.x` before blending and before the
+        // wobble was added, which is not a ceiling at all: the sprint offset and the wobble
+        // were both free to push the muzzle back past it. maxMuzzleUpDegrees exists so the
+        // weapon can never swing out of frame, so it has to be the last word.
+        result.x = Mathf.Min(result.x, maxMuzzleUpDegrees);
+        return result;
     }
 
     void ApplyToSlot(Vector3 position, Vector3 euler)
@@ -235,6 +231,23 @@ public class WeaponMovementPose : MonoBehaviour
     {
         if (thirdPersonWeapon == null) return;
 
+        // Re-establish the rest pose before posing.
+        //
+        // This is the bug that made the third-person weapon drift off into space. Writing
+        // `.rotation` writes the LOCAL rotation, and the animator only rewrites the parent
+        // BONE, never this child -- so last frame's pose was still sitting in the local
+        // rotation when we multiplied this frame's on top of it, once per frame, forever.
+        // Restoring the captured rest pose first makes the result depend only on the current
+        // blend, which is what "pose" has to mean if it is going to blend back out again.
+        if (tpBaseOwner != thirdPersonWeapon)
+        {
+            tpBaseOwner = thirdPersonWeapon;
+            tpBaseLocalPosition = thirdPersonWeapon.localPosition;
+            tpBaseLocalRotation = thirdPersonWeapon.localRotation;
+        }
+        thirdPersonWeapon.localPosition = tpBaseLocalPosition;
+        thirdPersonWeapon.localRotation = tpBaseLocalRotation;
+
         Vector3 up = CharacterRoot.up;
         Vector3 right = CharacterRoot.right;
         Vector3 forward = CharacterRoot.forward;
@@ -262,9 +275,18 @@ public class WeaponMovementPose : MonoBehaviour
         {
             offHand = weaponController.leftHandIK;
             if (offHand == null) return;
-            offHandOriginalTarget = offHand.target;
         }
-        if (offHandOriginalTarget == null) offHandOriginalTarget = offHand.target;
+
+        // Track whatever the rest of the game points the off-hand at, but never adopt our own
+        // tuck transform as "the original".
+        //
+        // The old code captured the original once and only refreshed it when it was null. Swap
+        // weapons mid tac-sprint and two things went wrong: the captured target still belonged
+        // to the previous gun, and if the capture happened while the hand was tucked it
+        // captured the tuck transform itself -- so "restore the original" restored the tuck and
+        // the left hand never went back to the handguard for the rest of the life.
+        if (offHand.target != null && offHand.target != tuckTarget)
+            offHandOriginalTarget = offHand.target;
         if (offHandOriginalTarget == null) return;
 
         if (tuckTarget == null)
