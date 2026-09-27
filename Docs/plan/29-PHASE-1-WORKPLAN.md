@@ -215,7 +215,7 @@ The LAN system is reported as mostly working. Tasks:
  9. menu: operator idle animation + weapon attach                          ← D3
 10. input: PlayerInputSource complete; adopt IInputSource everywhere       ← D6  DONE
 11. move: tac-sprint state into CharacterMove + MovementTuning             ← F5/F7  DONE
-12. anim: PerspectiveSync + TacSprintPose + ViewmodelPoseDriver            ← F1/F2/F3
+12. anim: PerspectiveSync + TacSprintPose + ViewmodelPoseDriver            ← F1/F2/F3  DONE
 13. anim: BodyPoseDriver + additive layer + hand IK; delete WeaponMovementPose ← F6/F8
 14. harness: tacsprint sequence; iterate to approval                       ← D5 closed
 15. ui: theme asset + component library
@@ -260,6 +260,41 @@ Two details worth keeping in mind for item 12:
 * Sprint is blocked by `StandState.walk`, which is driven by ADS from `CameraSwitcher`. That is
   why aiming cancels a sprint, and it is the one piece of sprint input still living outside
   `CharacterMove`.
+
+### 1.8 One pose, applied in the right phase — DONE (item 12)
+
+The first-person path was already correct: `WeaponSlotRig.Execute()` sets the weapon's position
+and rotation *absolutely* from the hand pointers and only then adds the pose, so it cannot
+accumulate. The third-person path did not do that, and the off-hand had a lifetime bug.
+
+* **F1/F2 — the third-person weapon drifted away.** `ApplyThirdPersonPose` ran in `Update()`
+  and did `tp.rotation = pose * tp.rotation`. Writing `.rotation` writes the LOCAL rotation, and
+  the animator rewrites the parent BONE, never this child — so last frame's pose was still in
+  the local rotation when this frame's was multiplied onto it. Once per frame, forever. Fixed by
+  capturing the rest pose, restoring it before posing, and moving all transform writes to
+  `LateUpdate` under `[DefaultExecutionOrder(100)]` so they land after the animator *and* after
+  `RigExecutor` (order 0). Currently latent — `thirdPersonWeapon` is unassigned on the prefab —
+  but it is the exact bug item 13's body driver would have inherited.
+* **F3 — the muzzle clamp was not a clamp.** `maxMuzzleUpDegrees` was applied to `tacEuler.x`
+  *before* blending and *before* the wobble, so the sprint offset and the wobble were both free
+  to push past it. Now applied to the final value. With the shipped numbers the ceiling is not
+  actually reached (peak ≈ 25° of 46°), so this is a correctness fix, not a visible one — but it
+  is what makes the field mean what it says once someone tunes it.
+* **Off-hand latched to the tuck point.** The original IK target was captured once and only
+  refreshed when null. Swapping weapons mid tac-sprint captured either the previous gun's grip
+  or — if the hand was tucked at that moment — the tuck transform itself, so "restore the
+  original" restored the tuck and the left hand never returned to the handguard. Now the
+  original is tracked every frame, skipping our own tuck transform.
+* **Per-frame `Debug.Log` in the rig pipeline.** `LocalRig.AfterLocalRigUpdate()` logged a
+  string per extension per character per frame. Removed.
+
+The pose is now computed once per frame in `Update` and published as `PosePosition`/`PoseEuler`;
+first person, third person and the off-hand all read those, so the perspectives cannot disagree.
+
+**Still blocked:** the visible quality of tac sprint cannot be judged until `MonKent.fbx` is
+re-exported with baking enabled — 10 of its 46 clips are fully flat and the best is 7.2%
+non-flat, so the body does not move regardless of what the pose layer does. Items 13 and 14
+are gated on that.
 
 ## Phase 1 exit criteria
 
