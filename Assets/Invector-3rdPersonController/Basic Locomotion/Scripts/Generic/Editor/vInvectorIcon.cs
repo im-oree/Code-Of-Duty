@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEditor;
@@ -11,21 +11,21 @@ namespace Invector
         static List<int> markedObjects;
         static vInvectorIcon()
         {
-            EditorApplication.hierarchyWindowItemOnGUI += ThirdPersonControllerIcon;
-            EditorApplication.hierarchyWindowItemOnGUI += ThirPersonCameraIcon;
+            EditorApplication.hierarchyWindowItemByEntityIdOnGUI += ThirdPersonControllerIcon;
+            EditorApplication.hierarchyWindowItemByEntityIdOnGUI += ThirPersonCameraIcon;
         }
-        static void ThirPersonCameraIcon(int instanceId, Rect selectionRect)
+        static void ThirPersonCameraIcon(EntityId entityId, Rect selectionRect)
         {
-            GameObject go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
+            GameObject go = EditorUtility.EntityIdToObject(entityId) as GameObject;
             if (go == null) return;
 
             var tpCamera = go.GetComponent<vCamera.vThirdPersonCamera>();
             if (tpCamera != null) DrawIcon("tp_camera", selectionRect);
         }
 
-        static void ThirdPersonControllerIcon(int instanceId, Rect selectionRect)
+        static void ThirdPersonControllerIcon(EntityId entityId, Rect selectionRect)
         {
-            GameObject go = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
+            GameObject go = EditorUtility.EntityIdToObject(entityId) as GameObject;
             if (go == null) return;
 
             var controller = go.GetComponent<Invector.vCharacterController.vThirdPersonController>();

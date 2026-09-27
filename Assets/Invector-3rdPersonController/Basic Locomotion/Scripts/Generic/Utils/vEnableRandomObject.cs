@@ -11,7 +11,7 @@ public class vEnableRandomObject : MonoBehaviour
     // Start is called before the first frame update
     protected void Awake()
     {
-        random = new System.Random(this.GetInstanceID());
+        random = new System.Random(this.GetEntityId().GetHashCode());
         if (enableOnStart)
             EnableObject();
     }
