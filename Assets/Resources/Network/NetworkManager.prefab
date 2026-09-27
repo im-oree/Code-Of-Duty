@@ -77,7 +77,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a26924dc324dff262378cc80536281e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gamePlayerPrefab: {fileID: 3714865847120627326, guid: 69f9bc67f07a3b2419c3d647c966143e, type: 3}
+  gamePlayerPrefab: {fileID: 9000000000000000005, guid: 9259d6ae1f0a4f5882d0ef3efe588c9d, type: 3}
   lobbyPlayerPrefab: {fileID: 7010000000000000003, guid: 8c8bfe1af22be664c98db486e6d3d3d9, type: 3}
   gameplayScene: DMArena1
   menuScene: StartMenu

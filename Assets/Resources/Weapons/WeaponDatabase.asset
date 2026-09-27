@@ -16,16 +16,20 @@ MonoBehaviour:
   - id: N4_Rifle
     displayName: N4 Carbine
     description: Reliable full-auto carbine. Balanced range and control.
-    prefab: {fileID: 985304021112885711, guid: 35772b39c6785bc43bcbef7d3d0f9600, type: 3}
+    prefab: {fileID: 1804537267582261728, guid: 6eb49b8498aebf14da0f67ba3cc0dddd, type: 3}
+    slotType: 1
   - id: Saga_Rifle
     displayName: Saga AR
     description: Hard-hitting battle rifle for mid-long engagements.
-    prefab: {fileID: 599794015, guid: 83e00367807ebba40b0dade6f9487778, type: 3}
+    prefab: {fileID: 1657064300731998236, guid: 64c7c0d4b7d23184e96a257b93f4d12b, type: 3}
+    slotType: 1
   - id: P6_SMG
     displayName: P6 SMG
     description: High rate of fire. Owns every close-quarters fight.
-    prefab: {fileID: 334654602, guid: 11bb7e2dac3ddc74dbb6aaef255af9a2, type: 3}
+    prefab: {fileID: 8906972324818415642, guid: 2bb8e2fe72069ce4497740bb116e6a52, type: 3}
+    slotType: 2
   - id: Glok_Pistol
     displayName: Glok 19
     description: Fast-draw sidearm. Never be caught reloading.
-    prefab: {fileID: 425936155466849112, guid: 46a4cef94db477b44853ac449a673553, type: 3}
+    prefab: {fileID: 4881589711078705830, guid: bf8e7b32b76156341ac90d8a8b08c28c, type: 3}
+    slotType: 3
