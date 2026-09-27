@@ -69,6 +69,13 @@ public class CODShooterInput : Invector.vCharacterController.vShooterMeleeInput
         weakAttackInput.keyboard = InputBindings.Get("meleeAttack").ToString();
         strongAttackInput.useInput = false;
         blockInput.useInput = false;
+
+        // parachute add-on (part of the standard COD character setup)
+        var parachute = GetComponentInChildren<vParachuteController>(true);
+        if (parachute != null)
+        {
+            parachute.openCloseParachute.keyboard = InputBindings.Get("parachute").ToString();
+        }
     }
 
     public override void InputHandle()

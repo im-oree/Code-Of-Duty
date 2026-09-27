@@ -62,6 +62,7 @@ public static class InputBindings
         // GENERAL
         Register("interact", "Interact / Pickup", "General", KeyCode.F);
         Register("viewToggle", "FPS / TPS Camera", "General", KeyCode.V);
+        Register("parachute", "Open / Close Parachute", "General", KeyCode.Space);
         Register("lean", "Lean (axis)", "General", KeyCode.None);
         Register("scoreboard", "Scoreboard", "General", KeyCode.Tab);
         Register("pause", "Pause Menu", "General", KeyCode.Escape);

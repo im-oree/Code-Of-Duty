@@ -18,22 +18,54 @@ public class CODInvectorPlayer : NetworkBehaviour
 {
     public readonly SyncVar<string> playerName = new SyncVar<string>("Player");
 
+    /// <summary>Mirrors the owner's parachute state so remote players see the canopy.</summary>
+    public readonly SyncVar<bool> parachuteOpen = new SyncVar<bool>(false);
+
     /// <summary>The locally controlled player, if any.</summary>
     public static CODInvectorPlayer Local { get; private set; }
 
     CODThirdPersonController controller;
     CODShooterInput input;
     Rigidbody body;
+    vParachuteController parachute;
 
     void Awake()
     {
         controller = GetComponent<CODThirdPersonController>();
         input = GetComponent<CODShooterInput>();
         body = GetComponent<Rigidbody>();
+        parachute = GetComponentInChildren<vParachuteController>(true);
+        parachuteOpen.OnChange += OnParachuteChanged;
 
         // stay inert until ownership is known (or offline fallback kicks in)
         SetControlled(false);
         StartCoroutine(OfflineFallback());
+    }
+
+    void OnDestroy()
+    {
+        parachuteOpen.OnChange -= OnParachuteChanged;
+    }
+
+    void Update()
+    {
+        // owner: publish parachute state changes
+        if (base.IsSpawned && base.IsOwner && parachute != null &&
+            parachute.usingParachute != parachuteOpen.Value)
+        {
+            ServerSetParachute(parachute.usingParachute);
+        }
+    }
+
+    [ServerRpc]
+    void ServerSetParachute(bool open) => parachuteOpen.Value = open;
+
+    void OnParachuteChanged(bool _, bool open, bool __)
+    {
+        // remote proxies: the controller logic doesn't run, so toggle the
+        // canopy visual directly (pose comes from the NetworkAnimator)
+        if (base.IsOwner || parachute == null || parachute.parachuteTilt == null) return;
+        parachute.parachuteTilt.SetActive(open);
     }
 
     /// <summary>If the object was never network-spawned (offline scene), activate local control.</summary>
