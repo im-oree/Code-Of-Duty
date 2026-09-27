@@ -158,10 +158,16 @@ public sealed class CODMainMenu : MonoBehaviour
         Bind("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_P6_SMG", () => SetPrimary("P6_SMG"));
         Bind("Screens/Screen_LOADOUT/SecondaryWeapons/Weapon_Glok_Pistol", () => SetSecondary("Glok_Pistol"));
 
-        // OPERATORS: the two visible scene cards reflect the two entries in
-        // CharacterSkinLibrary, rather than inventing unavailable operators.
-        Bind("Screens/Screen_OPERATORS/OperatorCards/Operator_Crimson", () => SetOperator(0));
-        Bind("Screens/Screen_OPERATORS/OperatorCards/Operator_Cobalt", () => SetOperator(1));
+        // OPERATORS: the scene cards are authored per CharacterDatabase entry
+        // as "Operator_<id>" — bind every entry whose card exists.
+        if (CharacterDatabase.Instance != null)
+        {
+            foreach (var entry in CharacterDatabase.Instance.characters)
+            {
+                string id = entry.id;
+                Bind("Screens/Screen_OPERATORS/OperatorCards/Operator_" + id, () => SetOperator(id));
+            }
+        }
 
         Bind("Screens/Screen_CAREER/ProfileCard/Button_SaveProfile", SaveProfile);
 
@@ -488,35 +494,49 @@ public sealed class CODMainMenu : MonoBehaviour
         ShowToast("CALLSIGN UPDATED");
     }
 
-    void SetOperator(int index)
+    void SetOperator(string characterId)
     {
-        CharacterSkinLibrary library = CharacterSkinLibrary.Instance;
-        if (library == null || index < 0 || index >= library.Count)
+        var db = CharacterDatabase.Instance;
+        var entry = db != null ? db.Get(characterId) : null;
+        if (entry == null || !entry.playable)
         {
             ShowToast("OPERATOR DATA UNAVAILABLE");
             return;
         }
-        PlayerAppearance.SavedSkinIndex = index;
-        stage?.operatorDisplay?.RefreshSkin();
+        CharacterDatabase.SetSelected(characterId);
+        stage?.operatorDisplay?.SetCharacter(characterId);
         RefreshOperatorCards();
-        ShowToast(library.skins[index].displayName.ToUpperInvariant() + " SELECTED");
+        ShowToast(entry.displayName.ToUpperInvariant() + " SELECTED");
     }
 
     void RefreshOperatorCards()
     {
-        int selected = PlayerAppearance.SavedSkinIndex;
-        foreach (var card in new[] { ("Operator_Crimson", 0), ("Operator_Cobalt", 1) })
+        var db = CharacterDatabase.Instance;
+        if (db == null) return;
+
+        var selected = db.GetSelected();
+        foreach (var entry in db.characters)
         {
-            Image bar = Find<Image>("Screens/Screen_OPERATORS/OperatorCards/" + card.Item1 + "/SelectedBar");
-            if (bar != null) bar.enabled = card.Item2 == selected;
+            string path = "Screens/Screen_OPERATORS/OperatorCards/Operator_" + entry.id;
+
+            Image bar = Find<Image>(path + "/SelectedBar");
+            if (bar != null) bar.enabled = selected != null && entry.id == selected.id;
+
+            // headshot rendered by the headshot studio, stored in the database
+            Image portrait = Find<Image>(path + "/Portrait");
+            if (portrait != null && entry.headshot != null)
+            {
+                portrait.sprite = entry.headshot;
+                portrait.enabled = true;
+            }
         }
     }
 
     void SetPrimary(string weaponId)
     {
-        string[] saved = PlayerLoadout.SavedLoadout.Split(',');
+        string[] saved = PlayerPrefs.GetString(CODLoadoutEquipper.LoadoutPref, string.Empty).Split(',');
         string secondary = saved.Length > 1 && !string.IsNullOrWhiteSpace(saved[1]) ? saved[1].Trim() : "Glok_Pistol";
-        PlayerLoadout.SavedLoadout = weaponId + "," + secondary;
+        PlayerPrefs.SetString(CODLoadoutEquipper.LoadoutPref, weaponId + "," + secondary);
         stage?.operatorDisplay?.RefreshWeapon();
         RefreshLoadout();
         ShowToast("PRIMARY EQUIPPED");
@@ -524,16 +544,16 @@ public sealed class CODMainMenu : MonoBehaviour
 
     void SetSecondary(string weaponId)
     {
-        string[] saved = PlayerLoadout.SavedLoadout.Split(',');
+        string[] saved = PlayerPrefs.GetString(CODLoadoutEquipper.LoadoutPref, string.Empty).Split(',');
         string primary = saved.Length > 0 && !string.IsNullOrWhiteSpace(saved[0]) ? saved[0].Trim() : "N4_Rifle";
-        PlayerLoadout.SavedLoadout = primary + "," + weaponId;
+        PlayerPrefs.SetString(CODLoadoutEquipper.LoadoutPref, primary + "," + weaponId);
         RefreshLoadout();
         ShowToast("SECONDARY EQUIPPED");
     }
 
     void RefreshLoadout()
     {
-        string[] saved = PlayerLoadout.SavedLoadout.Split(',');
+        string[] saved = PlayerPrefs.GetString(CODLoadoutEquipper.LoadoutPref, string.Empty).Split(',');
         string primary = saved.Length > 0 && !string.IsNullOrWhiteSpace(saved[0]) ? saved[0].Trim() : "N4_Rifle";
         string secondary = saved.Length > 1 && !string.IsNullOrWhiteSpace(saved[1]) ? saved[1].Trim() : "Glok_Pistol";
         foreach (string id in new[] { "N4_Rifle", "Saga_Rifle", "P6_SMG" })

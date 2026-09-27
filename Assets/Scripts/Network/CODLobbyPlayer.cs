@@ -22,6 +22,9 @@ public class CODLobbyPlayer : NetworkBehaviour
 
     public readonly SyncVar<string> playerName = new SyncVar<string>("Player");
 
+    /// <summary>Selected operator (CharacterDatabase id) — used by the server to pick the spawn prefab.</summary>
+    public readonly SyncVar<string> characterId = new SyncVar<string>(string.Empty);
+
     void Awake()
     {
         playerName.OnChange += OnNameChanged;
@@ -41,6 +44,7 @@ public class CODLobbyPlayer : NetworkBehaviour
         if (IsOwner)
         {
             ServerSetPlayerName(CODNetworkManager.PlayerName);
+            ServerSetCharacter(PlayerPrefs.GetString(CharacterDatabase.SelectedPref, string.Empty));
             LocalPlayerJoined?.Invoke();
         }
     }
@@ -62,6 +66,12 @@ public class CODLobbyPlayer : NetworkBehaviour
     {
         if (!string.IsNullOrWhiteSpace(newName))
             playerName.Value = newName.Trim();
+    }
+
+    [ServerRpc]
+    void ServerSetCharacter(string id)
+    {
+        characterId.Value = id ?? string.Empty;
     }
 
     void OnNameChanged(string _, string __, bool asServer) => LobbyChanged?.Invoke();

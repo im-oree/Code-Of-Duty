@@ -255,6 +255,10 @@ public class CODNetworkManager : MonoBehaviour
         SpawnFor(conn, lobbyPlayerPrefab, null, null);
     }
 
+    /// <summary>Per-connection session data carried from the lobby (nickname + selected operator).</summary>
+    readonly System.Collections.Generic.Dictionary<int, (string name, string characterId)> sessionInfo
+        = new System.Collections.Generic.Dictionary<int, (string, string)>();
+
     /// <summary>A client entered/left a scene: swap lobby players for game players.</summary>
     void OnClientPresenceChangeEnd(ClientPresenceChangeEventArgs args)
     {
@@ -263,25 +267,49 @@ public class CODNetworkManager : MonoBehaviour
 
         NetworkConnection conn = args.Connection;
 
-        // carry the nickname over from the lobby player, then replace it
-        string carriedName = null;
+        // carry nickname + operator choice over from the lobby player, then replace it
         NetworkObject lobbyObject = null;
         foreach (NetworkObject owned in conn.Objects)
         {
             CODLobbyPlayer lobby = owned.GetComponent<CODLobbyPlayer>();
             if (lobby != null)
             {
-                carriedName = lobby.playerName.Value;
+                sessionInfo[conn.ClientId] = (lobby.playerName.Value, lobby.characterId.Value);
                 lobbyObject = owned;
                 break;
             }
         }
 
-        Transform spawnPoint = GetSpawnPoint();
-        SpawnFor(conn, gamePlayerPrefab, spawnPoint, carriedName);
+        SpawnGamePlayer(conn);
 
         if (lobbyObject != null)
             fishNet.ServerManager.Despawn(lobbyObject);
+    }
+
+    /// <summary>Picks the character prefab the player selected in the operator menu.</summary>
+    NetworkObject ResolveCharacterPrefab(NetworkConnection conn)
+    {
+        if (sessionInfo.TryGetValue(conn.ClientId, out var info) && CharacterDatabase.Instance != null)
+        {
+            GameObject prefab = CharacterDatabase.Instance.GetPrefab(info.characterId);
+            if (prefab != null && prefab.TryGetComponent(out NetworkObject nob))
+                return nob;
+        }
+        return gamePlayerPrefab;
+    }
+
+    /// <summary>Spawns the game player for a connection (initial spawn and respawns).</summary>
+    void SpawnGamePlayer(NetworkConnection conn)
+    {
+        sessionInfo.TryGetValue(conn.ClientId, out var info);
+        SpawnFor(conn, ResolveCharacterPrefab(conn), GetSpawnPoint(), info.name);
+    }
+
+    /// <summary>Called by CODNetworkHealth after the respawn delay. Server only.</summary>
+    public void RespawnPlayer(NetworkConnection conn)
+    {
+        if (!ServerActive || conn == null || !conn.IsActive) return;
+        SpawnGamePlayer(conn);
     }
 
     void SpawnFor(NetworkConnection conn, NetworkObject prefab, Transform spawnPoint, string playerName)
@@ -300,8 +328,8 @@ public class CODNetworkManager : MonoBehaviour
 
         nob.name = $"{prefab.name} [conn={conn.ClientId}]";
 
-        if (!string.IsNullOrEmpty(playerName) && nob.TryGetComponent(out NetCMDs netCmds))
-            netCmds.playerName.Value = playerName;
+        if (!string.IsNullOrEmpty(playerName) && nob.TryGetComponent(out CODInvectorPlayer player))
+            player.playerName.Value = playerName;
 
         fishNet.ServerManager.Spawn(nob, conn);
     }

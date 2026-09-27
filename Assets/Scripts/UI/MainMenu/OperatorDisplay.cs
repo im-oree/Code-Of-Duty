@@ -1,10 +1,11 @@
 using UnityEngine;
 
 /// <summary>
-/// The live operator model in the main menu: a display-only clone of the game
-/// player prefab (all gameplay/network components stripped), tinted with the
-/// selected skin, holding the selected primary weapon, breathing idle motion.
-/// Changing operator or loadout in the menu updates it instantly.
+/// The live operator model in the main menu: a display-only clone of the
+/// selected character's prefab (all gameplay/network components stripped),
+/// tinted with the character's variation color, holding the selected primary
+/// weapon, breathing idle motion. Changing operator or loadout in the menu
+/// updates it instantly. Characters come from the CharacterDatabase.
 /// </summary>
 public class OperatorDisplay : MonoBehaviour
 {
@@ -15,6 +16,10 @@ public class OperatorDisplay : MonoBehaviour
     float idleSeed;
     Quaternion baseRotation = Quaternion.identity;
     float groundedLocalY;
+    string modelCharacterId;
+
+    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+    static readonly int ColorId = Shader.PropertyToID("_Color");
 
     /// <summary>
     /// Resolves the authored preview already stored below <paramref name="parent"/>.
@@ -186,8 +191,61 @@ public class OperatorDisplay : MonoBehaviour
 
     static GameObject ResolvePlayerPrefab()
     {
-        // edit-mode safe: reads the prefab asset, never spawns the manager
+        // selected character from the database; falls back to the default
+        // player prefab so an empty database still shows something
+        var entry = CharacterDatabase.Instance != null ? CharacterDatabase.Instance.GetSelected() : null;
+        if (entry != null)
+        {
+            var prefab = CharacterDatabase.Instance.GetPrefab(entry.id);
+            if (prefab != null) return prefab;
+        }
         return CODNetworkManager.PlayerPrefabAsset;
+    }
+
+    /// <summary>
+    /// Swaps the preview to another character from the database (menu card
+    /// click). Replaces the current display model with a stripped clone of the
+    /// character's prefab and applies its variation tint.
+    /// </summary>
+    public void SetCharacter(string characterId)
+    {
+        var db = CharacterDatabase.Instance;
+        var entry = db != null ? db.Get(characterId) : null;
+        if (entry == null) return;
+
+        GameObject prefab = db.GetPrefab(characterId);
+        if (prefab == null) return;
+
+        if (model != null && modelCharacterId != null &&
+            db.GetPrefab(modelCharacterId) == prefab)
+        {
+            // same base prefab (color variation) — just re-tint
+            modelCharacterId = characterId;
+            RefreshSkin();
+            return;
+        }
+
+        if (model != null) DestroyImmediate(model);
+        handWeapon = null;
+        rightHand = null;
+
+        bool wasActive = gameObject.activeSelf;
+        gameObject.SetActive(false);
+        model = Instantiate(prefab, transform, false);
+        UnpackIfPrefabInstance(model);
+        model.name = "OperatorModel";
+        model.transform.localPosition = Vector3.zero;
+        model.transform.localRotation = Quaternion.identity;
+        StripToDisplayOnly(model);
+        gameObject.SetActive(wasActive);
+
+        modelCharacterId = characterId;
+        ConfigureAnimator();
+        if (rightHand == null) rightHand = FindBoneByName(model.transform, "hand_r", "righthand", "hand.r");
+        GroundModel();
+
+        RefreshSkin();
+        RefreshWeapon();
     }
 
     /// <summary>Removes every gameplay, physics and networking piece; keeps visuals + animator.</summary>
@@ -246,8 +304,26 @@ public class OperatorDisplay : MonoBehaviour
     public void RefreshSkin()
     {
         if (model == null) return;
-        var skin = CharacterSkinLibrary.Instance?.GetByIndex(PlayerAppearance.SavedSkinIndex);
-        if (skin != null) PlayerAppearance.ApplySkinTo(model, skin);
+
+        var db = CharacterDatabase.Instance;
+        var entry = db != null ? db.Get(modelCharacterId ?? string.Empty) ?? db.GetSelected() : null;
+        if (entry == null) return;
+
+        ApplyTint(model, entry.tint);
+    }
+
+    /// <summary>Tints every mesh via MaterialPropertyBlock — no material instances leak in edit mode.</summary>
+    public static void ApplyTint(GameObject root, Color tint)
+    {
+        var block = new MaterialPropertyBlock();
+        foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+        {
+            if (renderer is ParticleSystemRenderer) continue;
+            renderer.GetPropertyBlock(block);
+            block.SetColor(BaseColorId, tint);
+            block.SetColor(ColorId, tint);
+            renderer.SetPropertyBlock(block);
+        }
     }
 
     public void RefreshWeapon()
@@ -260,7 +336,7 @@ public class OperatorDisplay : MonoBehaviour
 
         // selected primary = first id in the saved loadout (fallback: first rifle in DB)
         string primaryId = null;
-        string saved = PlayerLoadout.SavedLoadout;
+        string saved = PlayerPrefs.GetString(CODLoadoutEquipper.LoadoutPref, string.Empty);
         if (!string.IsNullOrEmpty(saved)) primaryId = saved.Split(',')[0].Trim();
 
         var database = WeaponDatabase.Instance;
@@ -269,7 +345,7 @@ public class OperatorDisplay : MonoBehaviour
         GameObject prefab = database.GetPrefab(primaryId);
         if (prefab == null)
         {
-            var rifles = database.GetBySlotType(Weapon.SlotType.rifle);
+            var rifles = database.GetBySlotType(WeaponDatabase.SlotType.rifle);
             if (rifles.Count > 0) prefab = rifles[0].prefab;
         }
         if (prefab == null) return;
@@ -300,9 +376,9 @@ public class OperatorDisplay : MonoBehaviour
         UnpackIfPrefabInstance(handWeapon);
         handWeapon.name = prefab.name;
 
+        // display only: strip behaviours and physics from the preview gun
         foreach (var script in handWeapon.GetComponentsInChildren<MonoBehaviour>(true))
         {
-            if (script is Weapon || script is WeaponPoint) continue; // needed for grip alignment
             try { DestroyImmediate(script); } catch { }
         }
         foreach (var body in handWeapon.GetComponentsInChildren<Rigidbody>(true)) DestroyImmediate(body);
@@ -322,27 +398,17 @@ public class OperatorDisplay : MonoBehaviour
             return;
         }
 
-        weapon.transform.SetParent(rightHand, false);
-
-        // align the weapon's authored right-hand grip point onto the palm
-        Transform grip = null;
-        foreach (var point in weapon.GetComponentsInChildren<WeaponPoint>(true))
+        // Invector weapons are authored to sit at zero local pose on the
+        // hand's weapon handler — use it when present, else the palm itself
+        Transform mount = rightHand;
+        foreach (Transform child in rightHand)
         {
-            if (point.pointType == WeaponPoint.PointType.RightHandDefault) { grip = point.transform; break; }
+            if (child.name.ToLowerInvariant().Contains("handler")) { mount = child; break; }
         }
 
-        if (grip != null)
-        {
-            Quaternion gripLocalRot = Quaternion.Inverse(weapon.transform.rotation) * grip.rotation;
-            weapon.transform.localRotation = Quaternion.Inverse(gripLocalRot);
-            Vector3 gripLocalPos = weapon.transform.InverseTransformPoint(grip.position);
-            weapon.transform.localPosition = -(weapon.transform.localRotation * gripLocalPos);
-        }
-        else
-        {
-            weapon.transform.localPosition = Vector3.zero;
-            weapon.transform.localRotation = Quaternion.identity;
-        }
+        weapon.transform.SetParent(mount, false);
+        weapon.transform.localPosition = Vector3.zero;
+        weapon.transform.localRotation = Quaternion.identity;
     }
 
     void HideHolsteredDuplicate(string weaponName)

@@ -11,13 +11,23 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "COD/Weapon Database", fileName = "WeaponDatabase")]
 public class WeaponDatabase : ScriptableObject
 {
+    /// <summary>Loadout slot category of a weapon.</summary>
+    public enum SlotType
+    {
+        rifle = 1,
+        smg = 2,
+        pistol = 3
+    }
+
     [Serializable]
     public class Entry
     {
         public string id;
         public string displayName;
         [TextArea] public string description;
+        [Tooltip("Invector shooter weapon prefab (vShooterWeapon), usable on any character")]
         public GameObject prefab;
+        public SlotType slotType = SlotType.rifle;
     }
 
     public List<Entry> weapons = new List<Entry>();
@@ -45,15 +55,14 @@ public class WeaponDatabase : ScriptableObject
 
     public GameObject GetPrefab(string id) => Get(id)?.prefab;
 
-    /// <summary>All weapons whose Weapon.slotType matches (for the loadout menu).</summary>
-    public List<Entry> GetBySlotType(Weapon.SlotType slotType)
+    /// <summary>All weapons of a slot category (for the loadout menu).</summary>
+    public List<Entry> GetBySlotType(SlotType slotType)
     {
         var result = new List<Entry>();
         foreach (var entry in weapons)
         {
             if (entry?.prefab == null) continue;
-            var weapon = entry.prefab.GetComponent<Weapon>();
-            if (weapon != null && weapon.slotType == slotType) result.Add(entry);
+            if (entry.slotType == slotType) result.Add(entry);
         }
         return result;
     }

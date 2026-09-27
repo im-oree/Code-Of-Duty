@@ -1,4 +1,4 @@
-﻿using Invector.vCharacterController;
+using Invector.vCharacterController;
 using System.Collections;
 using UnityEngine;
 
@@ -211,6 +211,10 @@ namespace Invector.vCamera
 
             firstUpdated = true;
             useSmooth = true;
+            if (fpHeadBone == null)
+            {
+                ResolveHeadBone();
+            }
             targetLookAt.rotation = startUsingTargetRotation ? mainTarget.rotation : transform.rotation;
             targetLookAt.position = mainTarget.position;
             targetLookAt.hideFlags = HideFlags.HideInHierarchy;
@@ -281,6 +285,12 @@ namespace Invector.vCamera
                 return;
             }
 
+            // Native first person: driven in LateUpdate (after animation) instead.
+            if (isFirstPersonActive)
+            {
+                return;
+            }
+
             switch (currentState.cameraMode)
             {
                 case TPCameraMode.FreeDirectional:
@@ -294,6 +304,114 @@ namespace Invector.vCamera
                     break;
             }
         }
+
+        #region Native First Person (Code Of Duty integration)
+
+        /// <summary>Head bone of the current target, resolved from its Animator.</summary>
+        protected Transform fpHeadBone;
+        /// <summary>True while the active camera state is flagged as first person.</summary>
+        public virtual bool isFirstPersonActive { get { return currentState != null && currentState.isFirstPerson && fpHeadBone != null; } }
+        /// <summary>Raised when the first person state becomes active/inactive (body-hide listens to this).</summary>
+        public event System.Action<bool> onFirstPersonChanged;
+        protected bool wasFirstPerson;
+        protected float defaultNearClip = 0.15f;
+
+        protected virtual void LateUpdate()
+        {
+            if (mainTarget == null || currentState == null || !isInit || isFreezed)
+            {
+                return;
+            }
+
+            bool fp = isFirstPersonActive;
+            if (fp != wasFirstPerson)
+            {
+                wasFirstPerson = fp;
+                if (targetCamera != null)
+                {
+                    if (fp) defaultNearClip = targetCamera.nearClipPlane;
+                    targetCamera.nearClipPlane = fp ? currentState.firstPersonNearClip : defaultNearClip;
+                }
+                onFirstPersonChanged?.Invoke(fp);
+            }
+
+            if (fp)
+            {
+                FirstPersonMovement();
+            }
+        }
+
+        /// <summary>
+        /// First person camera behaviour: mount on the head bone, rotate from
+        /// mouse input, no occlusion/culling. Runs in LateUpdate so the head
+        /// position is the one the animation produced this frame.
+        /// </summary>
+        public virtual void FirstPersonMovement()
+        {
+            if (fpHeadBone == null || targetCamera == null)
+            {
+                return;
+            }
+
+            if (useSmooth)
+            {
+                currentState.Slerp(lerpState, smoothBetweenState * Time.deltaTime);
+            }
+            else
+            {
+                currentState.CopyState(lerpState);
+            }
+
+            mouseY = vExtensions.ClampAngle(mouseY, lerpState.yMinLimit, lerpState.yMaxLimit);
+
+            Quaternion rotation = Quaternion.Euler(mouseY + offsetMouse.y, mouseX + offsetMouse.x, 0);
+            Quaternion yawOnly = Quaternion.Euler(0, mouseX + offsetMouse.x, 0);
+            Vector3 position = fpHeadBone.position + yawOnly * currentState.firstPersonOffset;
+
+            transform.position = position;
+            transform.rotation = rotation;
+            if (selfRigidbody != null)
+            {
+                selfRigidbody.position = position;
+                selfRigidbody.rotation = rotation;
+            }
+
+            targetCamera.fieldOfView = currentState.fov;
+
+            // keep the third person bookkeeping coherent so switching back is seamless
+            currentTargetPos = new Vector3(currentTarget.position.x, currentTarget.position.y, currentTarget.position.z) + currentTarget.transform.up * offSetPlayerPivot;
+            current_cPos = currentTargetPos + currentTarget.transform.up * currentState.height;
+            targetLookAt.position = current_cPos;
+            targetLookAt.rotation = rotation;
+            distance = 0f;
+            startPosition = position;
+        }
+
+        /// <summary>Resolve the head bone from the target's Animator (humanoid) or by name.</summary>
+        protected virtual void ResolveHeadBone()
+        {
+            fpHeadBone = null;
+            if (mainTarget == null)
+            {
+                return;
+            }
+
+            var animator = mainTarget.GetComponentInChildren<Animator>();
+            if (animator != null && animator.isHuman)
+            {
+                fpHeadBone = animator.GetBoneTransform(HumanBodyBones.Head);
+            }
+
+            if (fpHeadBone == null)
+            {
+                foreach (var t in mainTarget.GetComponentsInChildren<Transform>())
+                {
+                    if (t.name.ToLower().Contains("head")) { fpHeadBone = t; break; }
+                }
+            }
+        }
+
+        #endregion
 
         /// <summary>
         /// Set a <seealso cref="lockTarget"/> to the  camera  auto rotate to look to.
@@ -358,6 +476,7 @@ namespace Invector.vCamera
         {
             mainTarget = newTarget;
             currentTarget = newTarget;
+            ResolveHeadBone();
             if (!isInit)
             {
                 Init();

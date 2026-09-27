@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System.Collections.Generic;
 
 namespace Invector
@@ -30,6 +30,19 @@ namespace Invector
         public Vector2 fixedAngle;
         public List<LookPoint> lookPoints;
         public TPCameraMode cameraMode;
+
+        // ------------------------------------------------------------------
+        // Native First Person support (Code Of Duty integration).
+        // A camera state can be flagged as first person: the camera mounts on
+        // the character's head bone (+ offset in head-local space), skips all
+        // culling/occlusion logic and uses a near clip plane suited for FP.
+        // ------------------------------------------------------------------
+        [Tooltip("Mount the camera on the character's head bone instead of orbiting it")]
+        public bool isFirstPerson;
+        [Tooltip("Camera offset from the head bone, in character space (x = right, y = up, z = forward)")]
+        public Vector3 firstPersonOffset = new Vector3(0f, 0.08f, 0.12f);
+        [Tooltip("Near clip plane used while this first person state is active")]
+        public float firstPersonNearClip = 0.01f;
 
         public vThirdPersonCameraState(string name)
         {

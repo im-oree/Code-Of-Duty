@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace Invector.vCamera
 {
@@ -35,6 +35,11 @@ namespace Invector.vCamera
             to.lookPoints = from.lookPoints;
             to.fov = Mathf.Lerp(to.fov, from.fov, time);
 
+            // first person (COD native integration)
+            to.isFirstPerson = from.isFirstPerson;
+            to.firstPersonOffset = Vector3.Lerp(to.firstPersonOffset, from.firstPersonOffset, time);
+            to.firstPersonNearClip = from.firstPersonNearClip;
+
             if (to.fov <= 0) to.fov = 1f;
         }
 
@@ -67,6 +72,11 @@ namespace Invector.vCamera
             to.cameraMode = from.cameraMode;
             to.useZoom = from.useZoom;
             to.fov = from.fov;
+
+            // first person (COD native integration)
+            to.isFirstPerson = from.isFirstPerson;
+            to.firstPersonOffset = from.firstPersonOffset;
+            to.firstPersonNearClip = from.firstPersonNearClip;
 
             if (to.fov <= 0) to.fov = 1f;
         }

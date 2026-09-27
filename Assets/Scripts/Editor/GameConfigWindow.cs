@@ -224,41 +224,33 @@ public class GameConfigWindow : EditorWindow
             return;
         }
 
-        var weapon = entry.prefab.GetComponentInChildren<Weapon>(true);
+        var weapon = entry.prefab.GetComponentInChildren<Invector.vShooter.vShooterWeapon>(true);
         if (weapon == null)
         {
-            EditorGUILayout.HelpBox("Prefab has no Weapon component.", MessageType.Warning);
+            EditorGUILayout.HelpBox("Prefab has no vShooterWeapon component (Invector).", MessageType.Warning);
             return;
         }
 
         GUILayout.Space(10f);
-        EditorGUILayout.LabelField("COMBAT", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("COMBAT (Invector vShooterWeapon)", EditorStyles.boldLabel);
         var so = new SerializedObject(weapon);
         so.Update();
-        EditorGUILayout.PropertyField(so.FindProperty("slotType"));
-        EditorGUILayout.PropertyField(so.FindProperty("playerDamage"), new GUIContent("Damage"));
-        EditorGUILayout.PropertyField(so.FindProperty("shotTemp"), new GUIContent("Fire Interval (s)"));
-        EditorGUILayout.PropertyField(so.FindProperty("singleShoot"), new GUIContent("Semi-Auto"));
-        EditorGUILayout.PropertyField(so.FindProperty("bulletStartSpeed"), new GUIContent("Bullet Speed (range)"));
-        EditorGUILayout.PropertyField(so.FindProperty("bulletForce"), new GUIContent("Impact Force"));
+        EditorGUILayout.PropertyField(so.FindProperty("automaticWeapon"), new GUIContent("Automatic"));
+        EditorGUILayout.PropertyField(so.FindProperty("_shootFrequency"), new GUIContent("Fire Interval (s)"));
+        EditorGUILayout.PropertyField(so.FindProperty("_maxDamage"), new GUIContent("Damage"));
+        EditorGUILayout.PropertyField(so.FindProperty("velocity"), new GUIContent("Bullet Velocity"));
 
         GUILayout.Space(6f);
         EditorGUILayout.LabelField("AMMO", EditorStyles.boldLabel);
-        EditorGUILayout.PropertyField(so.FindProperty("magazineSize"));
+        EditorGUILayout.PropertyField(so.FindProperty("_clipSize"), new GUIContent("Clip Size"));
         EditorGUILayout.PropertyField(so.FindProperty("reloadTime"));
+        EditorGUILayout.PropertyField(so.FindProperty("ammoID"));
 
         GUILayout.Space(6f);
         EditorGUILayout.LabelField("RECOIL", EditorStyles.boldLabel);
-        EditorGUILayout.PropertyField(so.FindProperty("recoilParametersModel").FindPropertyRelative("recoilForce"));
-
-        GUILayout.Space(6f);
-        EditorGUILayout.LabelField("SHOTGUN", EditorStyles.boldLabel);
-        EditorGUILayout.PropertyField(so.FindProperty("shotgun"));
-        if (so.FindProperty("shotgun").boolValue)
-        {
-            EditorGUILayout.PropertyField(so.FindProperty("bulletAmount"));
-            EditorGUILayout.PropertyField(so.FindProperty("accuracy"));
-        }
+        EditorGUILayout.PropertyField(so.FindProperty("recoilUp"));
+        EditorGUILayout.PropertyField(so.FindProperty("recoilRight"));
+        EditorGUILayout.PropertyField(so.FindProperty("recoilLeft"));
 
         if (so.ApplyModifiedProperties())
         {

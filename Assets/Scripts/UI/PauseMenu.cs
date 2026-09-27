@@ -66,6 +66,15 @@ public class PauseMenu : MonoBehaviour
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+        SetLocalPlayerInputLocked(true);
+    }
+
+    /// <summary>Locks/unlocks the local Invector player's input while the menu is open.</summary>
+    static void SetLocalPlayerInputLocked(bool locked)
+    {
+        var local = CODInvectorPlayer.Local;
+        var input = local != null ? local.GetComponent<CODShooterInput>() : Object.FindFirstObjectByType<CODShooterInput>();
+        if (input != null && input.enabled) input.SetLockAllInput(locked);
     }
 
     static void EnsureEventSystem()
@@ -86,6 +95,7 @@ public class PauseMenu : MonoBehaviour
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
+        SetLocalPlayerInputLocked(false);
     }
 
     void ShowHome()
