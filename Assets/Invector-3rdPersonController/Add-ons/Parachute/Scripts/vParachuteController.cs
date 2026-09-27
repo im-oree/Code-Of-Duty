@@ -210,7 +210,7 @@ public class vParachuteController : vMonoBehaviour
         if (canMove)
         {
             var inputX = tpInput.horizontalInput.GetAxis();
-            var inputY = tpInput.verticallInput.GetAxis();
+            var inputY = tpInput.verticalInput.GetAxis();
             var input = new Vector3(inputX, 0, inputY);
             var rotationInput = input;
             var inputRelativeToCamera = tpInput.cameraMain.transform.TransformDirection(input);
