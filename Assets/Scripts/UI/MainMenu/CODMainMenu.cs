@@ -151,12 +151,17 @@ public sealed class CODMainMenu : MonoBehaviour
             Bind("Screens/Screen_PLAY/BrowserPanel/ServerRow_" + i, () => JoinServerRow(row));
         }
 
-        // LOADOUT: cards are authored in the scene and map directly to the
-        // actual WeaponDatabase ids used by PlayerLoadout.
-        Bind("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_N4_Rifle", () => SetPrimary("N4_Rifle"));
-        Bind("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_Saga_Rifle", () => SetPrimary("Saga_Rifle"));
-        Bind("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_P6_SMG", () => SetPrimary("P6_SMG"));
-        Bind("Screens/Screen_LOADOUT/SecondaryWeapons/Weapon_Glok_Pistol", () => SetSecondary("Glok_Pistol"));
+        // LOADOUT: one authored card per WeaponDatabase entry (Invector's
+        // native arsenal — guns, melee, grenades). Clicking a card assigns it
+        // to the loadout slot matching its type.
+        if (WeaponDatabase.Instance != null)
+        {
+            foreach (var weapon in WeaponDatabase.Instance.weapons)
+            {
+                string id = weapon.id;
+                Bind("Screens/Screen_LOADOUT/WeaponCards/Weapon_" + id, () => SetLoadoutWeapon(id));
+            }
+        }
 
         // OPERATORS: the scene cards are authored per CharacterDatabase entry
         // as "Operator_<id>" — bind every entry whose card exists.
@@ -532,41 +537,76 @@ public sealed class CODMainMenu : MonoBehaviour
         }
     }
 
-    void SetPrimary(string weaponId)
+    /// <summary>Loadout slots: primary gun, secondary gun, melee, grenade.</summary>
+    static readonly string[] LoadoutDefaults = { "AssaultRifle", "Handgun", "ShortKatana", "FragGrenade" };
+
+    static string[] SavedLoadoutSlots()
     {
-        string[] saved = PlayerPrefs.GetString(CODLoadoutEquipper.LoadoutPref, string.Empty).Split(',');
-        string secondary = saved.Length > 1 && !string.IsNullOrWhiteSpace(saved[1]) ? saved[1].Trim() : "Glok_Pistol";
-        PlayerPrefs.SetString(CODLoadoutEquipper.LoadoutPref, weaponId + "," + secondary);
-        stage?.operatorDisplay?.RefreshWeapon();
-        RefreshLoadout();
-        ShowToast("PRIMARY EQUIPPED");
+        string[] slots = (string[])LoadoutDefaults.Clone();
+        string[] saved = PlayerPrefs.GetString(CODLoadout.LoadoutPref, string.Empty).Split(',');
+        for (int i = 0; i < slots.Length && i < saved.Length; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(saved[i])) slots[i] = saved[i].Trim();
+        }
+        return slots;
     }
 
-    void SetSecondary(string weaponId)
+    /// <summary>Which loadout slot a weapon occupies, by its database slot type.</summary>
+    static int SlotIndexFor(WeaponDatabase.Entry entry)
     {
-        string[] saved = PlayerPrefs.GetString(CODLoadoutEquipper.LoadoutPref, string.Empty).Split(',');
-        string primary = saved.Length > 0 && !string.IsNullOrWhiteSpace(saved[0]) ? saved[0].Trim() : "N4_Rifle";
-        PlayerPrefs.SetString(CODLoadoutEquipper.LoadoutPref, primary + "," + weaponId);
+        switch (entry.slotType)
+        {
+            case WeaponDatabase.SlotType.pistol: return 1;
+            case WeaponDatabase.SlotType.melee: return 2;
+            case WeaponDatabase.SlotType.grenade: return 3;
+            default: return 0; // rifles / shotguns / heavy → primary
+        }
+    }
+
+    void SetLoadoutWeapon(string weaponId)
+    {
+        var entry = WeaponDatabase.Instance?.Get(weaponId);
+        if (entry == null) return;
+
+        string[] slots = SavedLoadoutSlots();
+        slots[SlotIndexFor(entry)] = weaponId;
+        PlayerPrefs.SetString(CODLoadout.LoadoutPref, string.Join(",", slots));
+
+        stage?.operatorDisplay?.RefreshWeapon();
         RefreshLoadout();
-        ShowToast("SECONDARY EQUIPPED");
+        ShowToast(entry.displayName.ToUpperInvariant() + " EQUIPPED");
     }
 
     void RefreshLoadout()
     {
-        string[] saved = PlayerPrefs.GetString(CODLoadoutEquipper.LoadoutPref, string.Empty).Split(',');
-        string primary = saved.Length > 0 && !string.IsNullOrWhiteSpace(saved[0]) ? saved[0].Trim() : "N4_Rifle";
-        string secondary = saved.Length > 1 && !string.IsNullOrWhiteSpace(saved[1]) ? saved[1].Trim() : "Glok_Pistol";
-        foreach (string id in new[] { "N4_Rifle", "Saga_Rifle", "P6_SMG" })
+        var db = WeaponDatabase.Instance;
+        if (db == null) return;
+
+        string[] slots = SavedLoadoutSlots();
+        foreach (var weapon in db.weapons)
         {
-            Image bar = Find<Image>("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_" + id + "/SelectedBar");
-            if (bar != null) bar.enabled = id == primary;
+            string path = "Screens/Screen_LOADOUT/WeaponCards/Weapon_" + weapon.id;
+            Image bar = Find<Image>(path + "/SelectedBar");
+            if (bar != null) bar.enabled = System.Array.IndexOf(slots, weapon.id) >= 0;
+
+            Image icon = Find<Image>(path + "/Portrait");
+            if (icon != null && weapon.icon != null)
+            {
+                icon.sprite = weapon.icon;
+                icon.enabled = true;
+            }
         }
-        Image secondaryBar = Find<Image>("Screens/Screen_LOADOUT/SecondaryWeapons/Weapon_Glok_Pistol/SelectedBar");
-        if (secondaryBar != null) secondaryBar.enabled = secondary == "Glok_Pistol";
-        TextMeshProUGUI active = Find<TextMeshProUGUI>("Screens/Screen_LOADOUT/ActiveLoadout/PrimaryValue");
-        if (active != null) active.text = WeaponName(primary).ToUpperInvariant();
-        active = Find<TextMeshProUGUI>("Screens/Screen_LOADOUT/ActiveLoadout/SecondaryValue");
-        if (active != null) active.text = WeaponName(secondary).ToUpperInvariant();
+
+        SetSlotLabel("PrimaryValue", slots[0]);
+        SetSlotLabel("SecondaryValue", slots[1]);
+        SetSlotLabel("MeleeValue", slots[2]);
+        SetSlotLabel("GrenadeValue", slots[3]);
+    }
+
+    void SetSlotLabel(string labelName, string weaponId)
+    {
+        TextMeshProUGUI label = Find<TextMeshProUGUI>("Screens/Screen_LOADOUT/ActiveLoadout/" + labelName);
+        if (label != null) label.text = WeaponName(weaponId).ToUpperInvariant();
     }
 
     static string WeaponName(string id) => WeaponDatabase.Instance?.Get(id)?.displayName ?? id.Replace("_", " ");

@@ -97,3 +97,24 @@ replaced by our own in-tree integration).
       vShooterWeapon prefab variants (DB slots already Invector-based)
 - [ ] Ragdoll + locational damage components for MonKent (VBot has them)
 - [ ] Playtest matrix: solo, LAN host+client, FP/TP switch, parachute, respawn
+
+## Direction change (user, 2026-09-27): THIRD PERSON FIRST
+The game ships as a third person shooter on Invector's native, fully tuned TP
+path. Sessions always start in third person (CODShooterInput.restoreViewFromPrefs
+is off). The native FP integration stays in the camera/character stack and V
+still switches views, but FP positioning/polish is deferred until the TP game
+looks and plays right.
+
+## Direction change (user): NATIVE Invector weapons/inventory, not custom code
+Custom CODLoadoutEquipper was replaced by the native vItemManager pipeline:
+- characters now derive from vShooterMelee_Inventory (equip areas = 2+ weapon
+  slots extensible, grenade/consumable area, item icons, native hand handlers,
+  holsters, embedded Inventory UI + HUD + ThrowManagers)
+- CODLoadout only feeds the saved menu loadout into vItemManager.startItems
+  (weapon + ammo, auto-equip) and mirrors hand items to remote players
+- WeaponDatabase = the full Invector arsenal (5 guns, 6 melee, 4 grenades)
+  with itemIds + native icons; menu loadout is 4 slots (primary, secondary,
+  melee, grenade); kit guns fully purged from StartMenu's operator preview
+- weird running arm pose fixed: weapons now attach via Invector's own
+  defaultHandler equip points (animations were never modified; the parachute
+  graft is purely additive)

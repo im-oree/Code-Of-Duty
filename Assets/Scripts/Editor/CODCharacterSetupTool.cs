@@ -14,7 +14,7 @@ using UnityEngine;
 ///   Invector:  CODThirdPersonController, CODShooterInput (owner-only),
 ///              vShooterManager, vAmmoManager, vMeleeManager, vHeadTrack
 ///   COD:       CODFirstPersonBody (native first person),
-///              CODInvectorPlayer, CODNetworkHealth, CODLoadoutEquipper (FishNet)
+///              CODInvectorPlayer, CODNetworkHealth, CODLoadout (FishNet)
 ///   Parachute: 'Body Snap Control' child + the add-on's Parachute prefab
 ///              (animator states live in Invector@ShooterMelee.controller)
 ///
@@ -98,11 +98,20 @@ public static class CODCharacterSetupTool
         Ensure<Invector.vMelee.vMeleeManager>(go);
         Ensure<vHeadTrack>(go);
 
+        // NATIVE inventory / item system (weapon slots, icons, grenades)
+        var itemManager = Ensure<Invector.vItemManager.vItemManager>(go);
+        if (itemManager.itemListData == null)
+            itemManager.itemListData = AssetDatabase.LoadAssetAtPath<Invector.vItemManager.vItemListData>(
+                "Assets/Invector-3rdPersonController/ItemManager/ItemListData/vShooterMelee_ItemListData.asset");
+        EnsureChildPrefab(go, "Assets/Invector-3rdPersonController/ItemManager/Prefabs/Inventory_ShooterMelee.prefab", "Inventory_ShooterMelee");
+        EnsureChildPrefab(go, "Assets/Invector-3rdPersonController/Basic Locomotion/HUD/Resources/HUD.prefab", "HUD");
+        EnsureChildPrefab(go, "Assets/Invector-3rdPersonController/Shooter/Scripts/ThrowSystem/Prefabs/ThrowManager-Inventory_EquipArea.prefab", "ThrowManager");
+
         // COD layer
         Ensure<CODFirstPersonBody>(go);
         Ensure<CODInvectorPlayer>(go);
         Ensure<CODNetworkHealth>(go);
-        Ensure<CODLoadoutEquipper>(go);
+        Ensure<CODLoadout>(go);
         Ensure<FishNet.Object.NetworkObject>(go);
         Ensure<FishNet.Component.Transforming.NetworkTransform>(go);
         Ensure<FishNet.Component.Animating.NetworkAnimator>(go);
@@ -141,6 +150,19 @@ public static class CODCharacterSetupTool
         T c = go.GetComponent<T>();
         if (c == null) c = go.AddComponent<T>();
         return c;
+    }
+
+    /// <summary>Nests a prefab instance under the character if a similarly named child doesn't exist yet.</summary>
+    static void EnsureChildPrefab(GameObject go, string assetPath, string nameContains)
+    {
+        foreach (Transform child in go.transform)
+        {
+            if (child.name.Contains(nameContains)) return;
+        }
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+        if (prefab == null) return;
+        var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+        instance.transform.SetParent(go.transform, false);
     }
 
     static GameObject SaveAsPrefab(GameObject go)
