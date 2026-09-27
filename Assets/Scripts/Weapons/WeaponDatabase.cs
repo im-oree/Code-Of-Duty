@@ -16,7 +16,9 @@ public class WeaponDatabase : ScriptableObject
     {
         rifle = 1,
         smg = 2,
-        pistol = 3
+        pistol = 3,
+        melee = 4,
+        grenade = 5
     }
 
     [Serializable]
@@ -28,6 +30,19 @@ public class WeaponDatabase : ScriptableObject
         [Tooltip("Invector shooter weapon prefab (vShooterWeapon), usable on any character")]
         public GameObject prefab;
         public SlotType slotType = SlotType.rifle;
+
+        [Header("Invector item integration (native vItemManager)")]
+        [Tooltip("Item id inside the vItemListData (ShooterMelee list). -1 = not an inventory item")]
+        public int itemId = -1;
+        [Tooltip("How many of the item to give (grenades > 1)")]
+        public int itemAmount = 1;
+        [Tooltip("Equip area index inside the Invector inventory (0 = weapons, grenades use the throw area)")]
+        public int equipAreaIndex = 0;
+        [Tooltip("Ammo item id to give alongside this weapon (-1 = none)")]
+        public int ammoItemId = -1;
+        public int ammoAmount = 60;
+        [Tooltip("Invector item icon shown in the loadout menu")]
+        public Sprite icon;
     }
 
     public List<Entry> weapons = new List<Entry>();

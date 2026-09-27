@@ -33,7 +33,6 @@ public class CODShooterInput : Invector.vCharacterController.vShooterMeleeInput
 
     CODFirstPersonBody fpBody;
     Invector.vCharacterController.vHeadTrack headTrack;
-    CODLoadoutEquipper loadout;
     bool fpStateApplied;
 
     protected override void Start()
@@ -42,7 +41,6 @@ public class CODShooterInput : Invector.vCharacterController.vShooterMeleeInput
 
         fpBody = GetComponent<CODFirstPersonBody>();
         headTrack = GetComponent<Invector.vCharacterController.vHeadTrack>();
-        loadout = GetComponent<CODLoadoutEquipper>();
 
         ApplyBindings();
 
@@ -82,6 +80,14 @@ public class CODShooterInput : Invector.vCharacterController.vShooterMeleeInput
         {
             parachute.openCloseParachute.keyboard = InputBindings.Get("parachute").ToString();
         }
+
+        // grenades (Invector throw system): G aims, fire throws
+        var throwManager = GetComponentInChildren<Invector.Throw.vThrowManagerBase>(true);
+        if (throwManager != null)
+        {
+            throwManager.aimThrowInput.keyboard = InputBindings.Get("grenade").ToString();
+            throwManager.throwInput.keyboard = InputBindings.Get("fire").ToString();
+        }
     }
 
     public override void InputHandle()
@@ -93,18 +99,11 @@ public class CODShooterInput : Invector.vCharacterController.vShooterMeleeInput
             return;
         }
 
-        // first person toggle
+        // first person toggle (weapon/slot switching is native Invector
+        // inventory behaviour — equip areas, hotkeys and the equip display)
         if (InputBindings.Down("viewToggle"))
         {
             SetFirstPerson(!IsFirstPerson);
-        }
-
-        // loadout slots
-        if (loadout != null)
-        {
-            if (InputBindings.Down("weapon1")) loadout.SelectSlot(0);
-            else if (InputBindings.Down("weapon2")) loadout.SelectSlot(1);
-            else if (InputBindings.Down("melee")) loadout.SelectSlot(2);
         }
 
         SyncFirstPersonState();

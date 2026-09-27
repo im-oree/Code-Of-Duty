@@ -122,5 +122,17 @@ public class CODInvectorPlayer : NetworkBehaviour
         // remote copies must not fight the NetworkAnimator with IK/headtrack updates
         var headTrack = GetComponent<Invector.vCharacterController.vHeadTrack>();
         if (headTrack != null) headTrack.enabled = controlled;
+
+        // the native inventory (vItemManager) and the embedded UI canvases
+        // (inventory, HUD) belong to the LOCAL player only. They stay off
+        // here; CODLoadout enables them for the owner after it has written
+        // the loadout into the native start-items.
+        if (!controlled)
+        {
+            var itemManager = GetComponent<Invector.vItemManager.vItemManager>();
+            if (itemManager != null) itemManager.enabled = false;
+            foreach (var canvas in GetComponentsInChildren<Canvas>(true))
+                canvas.gameObject.SetActive(false);
+        }
     }
 }

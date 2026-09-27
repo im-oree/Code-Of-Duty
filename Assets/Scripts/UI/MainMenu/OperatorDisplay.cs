@@ -68,6 +68,16 @@ public class OperatorDisplay : MonoBehaviour
         baseRotation = transform.localRotation;
 
         if (idleSeed <= 0f) idleSeed = Random.value * 10f;
+
+        // show the character the player actually selected (database-driven);
+        // the authored model is only the edit-mode stand-in
+        var selected = CharacterDatabase.Instance != null ? CharacterDatabase.Instance.GetSelected() : null;
+        if (selected != null && Application.isPlaying)
+        {
+            SetCharacter(selected.id);
+            return;
+        }
+
         RefreshSkin();
         RefreshWeapon();
     }
@@ -266,6 +276,12 @@ public class OperatorDisplay : MonoBehaviour
         foreach (var cam in root.GetComponentsInChildren<Camera>(true)) DestroyImmediate(cam.gameObject);
         foreach (var listener in root.GetComponentsInChildren<AudioListener>(true)) DestroyImmediate(listener);
 
+        // embedded UI (inventory / HUD canvases inside the character prefab)
+        foreach (var canvas in root.GetComponentsInChildren<Canvas>(true))
+        {
+            if (canvas != null && canvas.gameObject != root) DestroyImmediate(canvas.gameObject);
+        }
+
         // all scripts (includes FishNet NetworkObject/NetworkBehaviours) — multi-pass for RequireComponent chains
         for (int pass = 0; pass < 6; pass++)
         {
@@ -336,7 +352,7 @@ public class OperatorDisplay : MonoBehaviour
 
         // selected primary = first id in the saved loadout (fallback: first rifle in DB)
         string primaryId = null;
-        string saved = PlayerPrefs.GetString(CODLoadoutEquipper.LoadoutPref, string.Empty);
+        string saved = PlayerPrefs.GetString(CODLoadout.LoadoutPref, CODLoadout.DefaultLoadout);
         if (!string.IsNullOrEmpty(saved)) primaryId = saved.Split(',')[0].Trim();
 
         var database = WeaponDatabase.Instance;
@@ -398,12 +414,12 @@ public class OperatorDisplay : MonoBehaviour
             return;
         }
 
-        // Invector weapons are authored to sit at zero local pose on the
-        // hand's weapon handler — use it when present, else the palm itself
+        // Invector weapons sit at zero local pose on the hand's NATIVE equip
+        // handler ("defaultHandler", from the inventory template hierarchy)
         Transform mount = rightHand;
-        foreach (Transform child in rightHand)
+        foreach (var t in rightHand.GetComponentsInChildren<Transform>(true))
         {
-            if (child.name.ToLowerInvariant().Contains("handler")) { mount = child; break; }
+            if (t.name == "defaultHandler") { mount = t; break; }
         }
 
         weapon.transform.SetParent(mount, false);

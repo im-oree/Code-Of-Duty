@@ -13,23 +13,179 @@ MonoBehaviour:
   m_Name: WeaponDatabase
   m_EditorClassIdentifier: 
   weapons:
-  - id: N4_Rifle
-    displayName: N4 Carbine
-    description: Reliable full-auto carbine. Balanced range and control.
+  - id: AssaultRifle
+    displayName: Assault Rifle
+    description: Reliable full-auto rifle. Balanced range and control.
     prefab: {fileID: 1804537267582261728, guid: 6eb49b8498aebf14da0f67ba3cc0dddd, type: 3}
     slotType: 1
-  - id: Saga_Rifle
-    displayName: Saga AR
-    description: Hard-hitting battle rifle for mid-long engagements.
+    itemId: 11
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: 13
+    ammoAmount: 120
+    icon: {fileID: 21300000, guid: c9bcb3ac64db75147b5fde5864fdfcb2, type: 3}
+  - id: vRifle
+    displayName: V-Rifle
+    description: Shooter edition rifle with a modern frame.
+    prefab: {fileID: 0}
+    slotType: 1
+    itemId: 22
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: 13
+    ammoAmount: 120
+    icon: {fileID: 21300000, guid: f6cfffab8b48ab1498161d83bea40058, type: 3}
+  - id: Sniper
+    displayName: Sniper
+    description: One shot, one kill at extreme range.
     prefab: {fileID: 1657064300731998236, guid: 64c7c0d4b7d23184e96a257b93f4d12b, type: 3}
     slotType: 1
-  - id: P6_SMG
-    displayName: P6 SMG
-    description: High rate of fire. Owns every close-quarters fight.
+    itemId: 15
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: 19
+    ammoAmount: 25
+    icon: {fileID: 21300000, guid: 71509c5d804e82d4bab6ecd153b20f9f, type: 3}
+  - id: RPG
+    displayName: RPG
+    description: Rocket launcher. Erases whatever it touches.
+    prefab: {fileID: 5123598363634129927, guid: 20ce5c27ce929fd4797cdbeeed1dc214, type: 3}
+    slotType: 1
+    itemId: 16
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: 18
+    ammoAmount: 8
+    icon: {fileID: 21300000, guid: 89ba1f6f55195c944aad86c1767dfe52, type: 3}
+  - id: Shotgun
+    displayName: Shotgun
+    description: Owns every close-quarters fight.
     prefab: {fileID: 8906972324818415642, guid: 2bb8e2fe72069ce4497740bb116e6a52, type: 3}
     slotType: 2
-  - id: Glok_Pistol
-    displayName: Glok 19
+    itemId: 12
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: 17
+    ammoAmount: 30
+    icon: {fileID: 21300000, guid: 0cf8e5588722acf40bfed44d2b39a429, type: 3}
+  - id: Handgun
+    displayName: Handgun
     description: Fast-draw sidearm. Never be caught reloading.
     prefab: {fileID: 4881589711078705830, guid: bf8e7b32b76156341ac90d8a8b08c28c, type: 3}
     slotType: 3
+    itemId: 10
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: 14
+    ammoAmount: 60
+    icon: {fileID: 21300000, guid: 09867a516d66b7d42bbe651bb2204313, type: 3}
+  - id: ShortKatana
+    displayName: Short Katana
+    description: Fast melee slashes for silent work.
+    prefab: {fileID: 0}
+    slotType: 4
+    itemId: 1
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: 56e79d7e38be01c4c9171802884dfb05, type: 3}
+  - id: ShortSword
+    displayName: Short Sword
+    description: Balanced melee blade.
+    prefab: {fileID: 0}
+    slotType: 4
+    itemId: 3
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: 359a7ebb90d1a2c4eba5c493a73ca543, type: 3}
+  - id: Axe
+    displayName: Axe
+    description: Heavy chops, heavier damage.
+    prefab: {fileID: 0}
+    slotType: 4
+    itemId: 0
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: b2158c09d5bc7284989f53a47f7638e3, type: 3}
+  - id: GreatSword
+    displayName: Great Sword
+    description: Massive two-hand cleaver.
+    prefab: {fileID: 0}
+    slotType: 4
+    itemId: 7
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: 68199bff0f78a2d4ca77e20ccc91ef76, type: 3}
+  - id: GreatKatana
+    displayName: Great Katana
+    description: Long reach, lethal arcs.
+    prefab: {fileID: 0}
+    slotType: 4
+    itemId: 8
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: 75c369d61ea60a54e877b01a25ae0916, type: 3}
+  - id: DualSwords
+    displayName: Dual Swords
+    description: Twin blades, twice the pressure.
+    prefab: {fileID: 0}
+    slotType: 4
+    itemId: 24
+    itemAmount: 1
+    equipAreaIndex: 0
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: a568bb7d845ecf140a30a74582d14f45, type: 3}
+  - id: FragGrenade
+    displayName: Frag Grenade
+    description: Classic fragmentation grenade.
+    prefab: {fileID: 0}
+    slotType: 5
+    itemId: 26
+    itemAmount: 3
+    equipAreaIndex: 2
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: 072fabb08b4333748a030d028e0f9170, type: 3}
+  - id: Molotov
+    displayName: Molotov
+    description: Area denial by fire.
+    prefab: {fileID: 0}
+    slotType: 5
+    itemId: 27
+    itemAmount: 3
+    equipAreaIndex: 2
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: dc69ea5879559e44ca874c4a0e1a2945, type: 3}
+  - id: SmokeGrenade
+    displayName: Smoke Grenade
+    description: Break line of sight, make the play.
+    prefab: {fileID: 0}
+    slotType: 5
+    itemId: 28
+    itemAmount: 3
+    equipAreaIndex: 2
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: b16842e1e839833449a249a61ddf53c6, type: 3}
+  - id: StunGrenade
+    displayName: Stun Grenade
+    description: Blind them before the push.
+    prefab: {fileID: 0}
+    slotType: 5
+    itemId: 29
+    itemAmount: 3
+    equipAreaIndex: 2
+    ammoItemId: -1
+    ammoAmount: 0
+    icon: {fileID: 21300000, guid: 1f3b8e1bda8349946a81d2a5adaaec75, type: 3}
