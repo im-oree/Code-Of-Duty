@@ -1,7 +1,7 @@
 # Three-FPS → Code Of Duty — Feature Map (living document)
 
-Reference repo: `https://github.com/im-oree/Three-FPS` (clone kept at `~/Documents/dev/Three-FPS`,
-outside this Unity project so Unity never imports it).
+Reference repo: `https://github.com/im-oree/Three-FPS` (working clone kept at `.reference/Three-FPS`,
+outside `Assets/` and ignored by Git so Unity never imports or compiles it).
 
 > The reference README is **stale**. Everything below was read from the actual `src/` tree,
 > `package.json`, `MULTIPLAYER.md`, `CHARACTER_STATE.md` and `NEXT_STEPS.md`.

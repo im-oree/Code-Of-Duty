@@ -117,6 +117,8 @@ InitTestScene*.unity*
 # Code Of Duty additions
 # ---------------------------------------------------------------------------
 # Reference material: the Three-FPS reference clone + UI research imagery.
+# Keep the clone outside Assets/ so Unity never imports or compiles it.
+/.reference/
 # Lives OUTSIDE Assets/ so Unity never imports or compiles it, and is never
 # committed (third-party code / imagery stays local).
 /Reference/
