@@ -85,3 +85,69 @@ for (const stale of unusedExemptions) {
   console.warn(`note: '${stale}' is exempt but no longer reads a device — drop the exemption.`);
 }
 console.log(`input seam intact — ${ALLOWED.size} justified exemption(s), 0 violations`);
+
+// ---------------------------------------------------------------------------
+// Check 2: anything that READS player intent must be gated to the local player.
+//
+// A component that reads intent and runs on a remote body drives that body from
+// this machine's keyboard. It is invisible while testing solo and obvious the
+// moment a second player joins, which is the worst combination a bug can have.
+//
+// Three ways to be gated, all accepted:
+//   1. implement ILocalOnly            -> NetComponentEnabler switches it off
+//   2. be a NetworkBehaviour that checks IsOwner
+//   3. check NetOwnership.IsLocal
+// ---------------------------------------------------------------------------
+
+const INTENT = [
+  /\bI?InputSource\b/,   // IInputSource, PlayerInputSource, BotInputSource, .InputSource
+  /\bCharacterInput\b/,
+];
+
+// Files that define or implement the seam itself, plus non-character consumers.
+const INTENT_ALLOWED = new Map([
+  ["Input/IInputSource.cs", "declares the interface"],
+  ["Input/BotInputSource.cs", "is a source, not a consumer"],
+  ["Input/BotBrain.cs", "writes the bot source; only ever added to bot bodies"],
+  ["Player/move/StandState.cs", "plain class owned by CharacterMove, which is gated"],
+  ["Player/move/CrouchState.cs", "plain class owned by CharacterMove, which is gated"],
+  ["Player/move/RollState.cs", "plain class owned by CharacterMove, which is gated"],
+]);
+
+const ungated = [];
+const unusedIntentExemptions = new Set(INTENT_ALLOWED.keys());
+
+for (const file of walk(SCRIPTS)) {
+  const rel = relative(SCRIPTS, file).split("\\").join("/");
+  const source = strip(readFileSync(file, "utf8"));
+  if (!INTENT.some((p) => p.test(source))) continue;
+
+  if (INTENT_ALLOWED.has(rel)) { unusedIntentExemptions.delete(rel); continue; }
+
+  const gated =
+    /:\s*[^{}\n]*\bILocalOnly\b/.test(source) ||
+    /\bILocalOnly\b/.test(source) ||
+    /\bIsOwner\b/.test(source) ||
+    /NetOwnership\s*\.\s*IsLocal/.test(source) ||
+    /\bIsLocal\b/.test(source);
+
+  if (!gated) ungated.push(rel);
+}
+
+if (ungated.length) {
+  console.error("Components that read player intent must be gated to the local player.\n");
+  for (const rel of ungated) console.error(`  ${rel}`);
+  console.error(
+    "\nOtherwise they run on every remote body and drive it from this machine's input." +
+    "\nFix: implement ILocalOnly, or check IsOwner / NetOwnership.IsLocal," +
+    "\nor add a justified entry to INTENT_ALLOWED."
+  );
+  process.exit(1);
+}
+
+for (const stale of unusedIntentExemptions) {
+  console.warn(`note: '${stale}' is exempt from the ownership check but no longer reads intent.`);
+}
+console.log(
+  `ownership gating intact — ${INTENT_ALLOWED.size} justified exemption(s), 0 ungated consumers`
+);

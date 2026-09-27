@@ -296,6 +296,41 @@ re-exported with baking enabled — 10 of its 46 clips are fully flat and the be
 non-flat, so the body does not move regardless of what the pose layer does. Items 13 and 14
 are gated on that.
 
+### 1.9 Remote bodies were reading this machine's keyboard — DONE
+
+Correcting an earlier note in this document: `NetComponentEnabler` **is** wired up. It lives on
+`Assets/Resources/PlayerNet Variant.prefab`, the networked variant of `Player.prefab`, which is
+what `CODNetworkManager` actually spawns. `Player.prefab` itself has no `NetworkObject` and is
+not the networked prefab. The earlier claim that nothing gated remote proxies was wrong.
+
+What *was* wrong is that the gating list had gone stale. It names seven components by object
+reference — `CharacterMove`, `Input_Handler`, `CameraSwitcher`, `CameraController`,
+`CinemachinePOVExtension`, `WeaponSight_hangler` and one more — and it was authored before
+`CharacterInput`, `PlayerInputSource` and `WeaponMovementPose` were added to the base prefab.
+None of those three are in it. `ViewingResistance` was never in it either and has no ownership
+check of its own, so on every remote body in a match it was reading the local player's input.
+Invisible while testing solo; obvious the moment a second player joins.
+
+Rather than add four more entries to a list that has already proven it cannot be kept correct
+by hand, the fact moved next to the code:
+
+* **`ILocalOnly`** — a marker interface. `NetComponentEnabler` finds every implementor at spawn
+  and disables it. Implemented by `ViewingResistance`, `CharacterInput` and `PlayerInputSource`.
+  (`GrenadeThrower` already self-gates on `IsOwner`; `WeaponMovementPose` on `IsLocal`.)
+* The serialized lists stay, because native components like `Camera` and whole GameObjects
+  cannot implement an interface. They are now null-guarded — an entry whose component was
+  deleted serialized as null and would have thrown mid-loop, leaving a half-disabled body.
+* **`Tools/verify-input-seam.mjs` grew a second check**: any component reading player intent
+  must be gated by `ILocalOnly`, an `IsOwner` check, or `NetOwnership.IsLocal`. Verified to fail
+  (exit 1, naming the file) when the marker is removed from `ViewingResistance`.
+
+**Known issue, recorded for the bots phase:** on a dedicated server `NetComponentEnabler`
+disables local-only components on *every* body, which would switch off a bot's own movement and
+input. `ComponentsDisaber()` now early-returns when the body is bot-driven, but that reads the
+input source — so a bot spawner must attach the `BotInputSource` *before* `ServerManager.Spawn`.
+Nothing depends on this yet because bots do not exist; it is written down because it will be
+load-bearing the moment they do.
+
 ## Phase 1 exit criteria
 
 - [ ] Enter Play on `Frontend`: **exactly one** operator, animated, holding the selected primary.

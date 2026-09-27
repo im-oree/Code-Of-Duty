@@ -6,7 +6,7 @@ using CodeOfDuty.Input;
 /// off-axis before it settles. Driven by this character's look intent rather than by the mouse,
 /// so a bot's weapon sways exactly like a player's instead of sitting unnaturally rigid.
 /// </summary>
-public class ViewingResistance : MonoBehaviour
+public class ViewingResistance : MonoBehaviour, ILocalOnly
 {
     public WeaponController weaponController;
     public EventsCenter eventsCenter;
