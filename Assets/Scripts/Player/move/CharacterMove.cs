@@ -90,6 +90,150 @@ public class CharacterMove : MonoBehaviour
     /// <summary>Runtime multiplier on sprintSpeed (driven by tac-sprint). 1 = normal sprint.</summary>
     [HideInInspector] public float sprintSpeedMultiplier = 1f;
 
+    [Tooltip("Sprint / tac-sprint feel. Leave empty to use the built-in defaults.")]
+    public MovementTuning movementTuning;
+
+    /// <summary>Tuning for this character, never null.</summary>
+    public MovementTuning Tuning => movementTuning != null ? movementTuning : MovementTuning.Default;
+
+    // ---------------------------------------------------------------- sprint authority
+    //
+    // Sprint and tactical sprint are movement decisions, so they are decided here, next to the
+    // speed they change and the state channel they report to. They used to be decided inside
+    // WeaponMovementPose -- a cosmetic component whose job is tilting the viewmodel -- which had
+    // three consequences worth remembering: a character without that component could not tac
+    // sprint at all (so bots never could), the component gated itself on being the local player
+    // (so the state was simply absent on every other character), and the reported locomotion
+    // state was derived from the *animation blend weights* rather than from the decision,
+    // so the state channel lagged the cosmetic it was supposed to be driving.
+
+    /// <summary>True while this character is sprinting, tactical or otherwise.</summary>
+    public bool IsSprinting { get; private set; }
+
+    /// <summary>True while the sprint is a tactical sprint.</summary>
+    public bool IsTacSprinting { get; private set; }
+
+    /// <summary>Seconds of tactical sprint left, 0 when not tac sprinting.</summary>
+    public float TacSprintTimeRemaining => IsTacSprinting ? Mathf.Max(0f, tacSprintEndTime - Time.time) : 0f;
+
+    float lastSprintTapTime = -99f;
+    float sprintHoldStartTime = -99f;
+    float tacSprintEndTime;
+
+    WeaponController weaponControllerCache;
+    bool weaponControllerSearched;
+
+    /// <summary>
+    /// Melee stance blocks sprint. Looked up lazily and allowed to stay null: a bot rig or a
+    /// test character with no weapon system is simply never blocked, rather than crashing.
+    /// </summary>
+    bool HandsAreBusy
+    {
+        get
+        {
+            if (!weaponControllerSearched)
+            {
+                weaponControllerCache = GetComponentInChildren<WeaponController>(true);
+                weaponControllerSearched = true;
+            }
+            return weaponControllerCache != null && weaponControllerCache.MeleeMode;
+        }
+    }
+
+    /// <summary>
+    /// Decide whether this character is sprinting this frame, and how fast.
+    ///
+    /// Runs before the movement state ticks so the state reads a decision that is already made,
+    /// and runs off <see cref="InputSource"/> so a bot reaches it by the same route a player
+    /// does.
+    /// </summary>
+    void UpdateSprintState()
+    {
+        var tuning = Tuning;
+        var input = InputSource;
+
+        bool movingForward = input.Move.y > tuning.forwardInputThreshold;
+        bool sprintHeld = input.Held(InputActionId.Sprint);
+
+        // Sprinting at all requires being upright, grounded and not walking. `walk` is set while
+        // aiming down sights, so ADS cancels a sprint the same way firing does.
+        bool canSprint = isGrounded
+                      && currentState == standState
+                      && !standState.walk
+                      && !HandsAreBusy;
+
+        IsSprinting = sprintHeld && movingForward && canSprint;
+
+        // ---- tactical sprint ----
+        if (input.Pressed(InputActionId.Sprint))
+        {
+            bool doubleTapped = Time.time - lastSprintTapTime <= tuning.doubleTapWindow;
+            if (InputBindings.TacSprintMode == 0 && doubleTapped && movingForward)
+                BeginTacSprint(tuning);
+
+            lastSprintTapTime = Time.time;
+            sprintHoldStartTime = Time.time;
+        }
+
+        // AUTO mode: engage once sprint has been held long enough.
+        if (InputBindings.TacSprintMode == 1 && IsSprinting && !IsTacSprinting &&
+            Time.time - sprintHoldStartTime > tuning.autoEngageHoldTime)
+            BeginTacSprint(tuning);
+
+        // Breaks on: stopping, the timer, firing, aiming, or the feature being switched off.
+        if (IsTacSprinting && (!IsSprinting
+                            || Time.time > tacSprintEndTime
+                            || !tuning.tacSprintEnabled
+                            || input.Held(InputActionId.Fire)
+                            || input.Held(InputActionId.Aim)))
+            IsTacSprinting = false;
+
+        sprintSpeedMultiplier = IsTacSprinting ? tuning.speedMultiplier : 1f;
+
+        ReportSprintLocomotion(input);
+    }
+
+    void BeginTacSprint(MovementTuning tuning)
+    {
+        if (!tuning.tacSprintEnabled) return;
+        IsTacSprinting = true;
+        tacSprintEndTime = Time.time + tuning.duration;
+    }
+
+    /// <summary>
+    /// Keep the shared locomotion channel in step while standing. Jump, slide, crouch and air
+    /// are owned by <see cref="SetState"/>, so this only speaks when the character is upright.
+    /// </summary>
+    void ReportSprintLocomotion(IInputSource input)
+    {
+        if (characterState == null || currentState != standState) return;
+
+        if (IsTacSprinting)
+        {
+            // Already there: say nothing. Re-requesting every frame would be harmless for a
+            // single state, but the Sprint step below is a real transition, so repeating the
+            // pair would flip TacSprint -> Sprint -> TacSprint every frame -- two log records
+            // per frame and a Carry channel oscillating Lowered/Ready under it.
+            if (characterState.Locomotion == LocomotionState.TacSprint) return;
+
+            // The table has no Walk -> TacSprint edge, so step through Sprint. Requesting the
+            // illegal edge directly would be rejected and logged rather than applied.
+            characterState.RequestLocomotion(LocomotionState.Sprint, "CharacterMove.sprint");
+            characterState.RequestLocomotion(LocomotionState.TacSprint, "CharacterMove.sprint");
+            return;
+        }
+
+        if (IsSprinting)
+        {
+            characterState.RequestLocomotion(LocomotionState.Sprint, "CharacterMove.sprint");
+            return;
+        }
+
+        characterState.RequestLocomotion(
+            input.Move.sqrMagnitude > 0.0001f ? LocomotionState.Walk : LocomotionState.Idle,
+            "CharacterMove.locomotion");
+    }
+
     [Header("Velocity values")]
     public Vector3 moveVelocity;
     public Vector3 velocity;
@@ -178,6 +322,10 @@ public class CharacterMove : MonoBehaviour
         if (currentState == null) return;
 
         GroundCheck();
+
+        // Decide sprint before the state ticks, so the state consumes a decision rather than
+        // making a second, slightly different one of its own.
+        UpdateSprintState();
 
         currentState.Tick();
     }

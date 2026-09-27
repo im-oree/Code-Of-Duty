@@ -20,6 +20,7 @@ using UnityEngine;
 public static class TacSprintPrefabTool
 {
     public const string PrefabPath = "Assets/Prefabs/Player.prefab";
+    public const string TuningPath = "Assets/Settings/MovementTuning.asset";
 
     [MenuItem("COD/Weapons/Re-serialize Player Pose Fields")]
     public static void ReserializePoseFields()
@@ -57,11 +58,21 @@ public static class TacSprintPrefabTool
             if (pose.thirdPersonWeapon == null)
                 report.AppendLine("  thirdPersonWeapon         = unassigned (no third-person weapon transform exists yet)");
 
+            // Sprint feel lives on a shared asset now, not on this component. Make sure the
+            // prefab actually points at one, otherwise the character silently runs on the
+            // built-in fallback and the Inspector shows an empty slot to tune.
+            var move = root.GetComponentInChildren<CharacterMove>(true);
+            if (move != null && move.movementTuning == null)
+            {
+                move.movementTuning = AssetDatabase.LoadAssetAtPath<MovementTuning>(TuningPath);
+                report.AppendLine("  repaired movementTuning   = " + Describe(move.movementTuning));
+                if (move.movementTuning != null) EditorUtility.SetDirty(move);
+            }
+
             EditorUtility.SetDirty(pose);
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             AssetDatabase.SaveAssets();
 
-            report.AppendLine("  tacSprintEnabled         = " + pose.tacSprintEnabled);
             report.AppendLine($"  tacPositionOffset        = {pose.tacPositionOffset}");
             report.AppendLine($"  tacEulerOffset           = {pose.tacEulerOffset}");
             report.AppendLine($"  tacOneHandedEulerOffset  = {pose.tacOneHandedEulerOffset}");
@@ -69,6 +80,18 @@ public static class TacSprintPrefabTool
             report.AppendLine($"  tacOffHandTuckLocal      = {pose.tacOffHandTuckLocal}");
             report.AppendLine("  retargetOffHand          = " + pose.retargetOffHand);
             report.AppendLine("  thirdPersonPoseScale     = " + pose.thirdPersonPoseScale);
+
+            var tuning = move != null ? move.Tuning : null;
+            if (tuning != null)
+            {
+                report.AppendLine($"  [MovementTuning] {tuning.name}");
+                report.AppendLine("    forwardInputThreshold  = " + tuning.forwardInputThreshold);
+                report.AppendLine("    tacSprintEnabled       = " + tuning.tacSprintEnabled);
+                report.AppendLine("    doubleTapWindow        = " + tuning.doubleTapWindow);
+                report.AppendLine("    autoEngageHoldTime     = " + tuning.autoEngageHoldTime);
+                report.AppendLine("    duration               = " + tuning.duration);
+                report.AppendLine("    speedMultiplier        = " + tuning.speedMultiplier);
+            }
 
             Debug.Log(report.ToString());
         }

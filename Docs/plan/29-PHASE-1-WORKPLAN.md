@@ -214,7 +214,7 @@ The LAN system is reported as mostly working. Tasks:
  8. menu: generate-frontend-scene editor command
  9. menu: operator idle animation + weapon attach                          ← D3
 10. input: PlayerInputSource complete; adopt IInputSource everywhere       ← D6  DONE
-11. move: tac-sprint state into CharacterMove + MovementTuning             ← F5/F7
+11. move: tac-sprint state into CharacterMove + MovementTuning             ← F5/F7  DONE
 12. anim: PerspectiveSync + TacSprintPose + ViewmodelPoseDriver            ← F1/F2/F3
 13. anim: BodyPoseDriver + additive layer + hand IK; delete WeaponMovementPose ← F6/F8
 14. harness: tacsprint sequence; iterate to approval                       ← D5 closed
@@ -225,6 +225,41 @@ The LAN system is reported as mostly working. Tasks:
 19. net: LAN discovery hardening + net harness
 20. docs: update every spec doc with what actually shipped
 ```
+
+### 1.7 Sprint ownership moved out of the viewmodel — DONE (item 11)
+
+`WeaponMovementPose` is a cosmetic component: its job is tilting the gun. It also happened to
+own the sprint rules. That had four consequences, all fixed here:
+
+* **F5 — movement decided by a cosmetic component.** The double-tap timers, the tac-sprint
+  countdown and the write to `characterMove.sprintSpeedMultiplier` all lived there. A character
+  without the component could not tac sprint at all, which included every bot. The component
+  also gated itself on `IsLocal`, so on every non-owned character the sprint state simply did
+  not exist.
+* **F7 — two thresholds for one decision.** `StandState` sprinted at `inputVector.y > 0`, the
+  tac-sprint check needed `input.Move.y > 0.1`, and `IsSprinting` thresholded a *cosmetic blend*
+  at `0.35` while the locomotion report thresholded the same blend at `0.5`. There was a band of
+  stick deflection where the character sprinted but could never tac sprint, and another where
+  fire was blocked but the state channel disagreed.
+* **Locomotion was reported from animation weights**, i.e. the state channel lagged the cosmetic
+  it was supposed to be driving — and it only ever reported `Idle`, `Sprint` or `TacSprint`, so
+  `Walk` was never reported by anything.
+* **Tuning scattered across prefabs.** Speed multiplier and durations were serialized per
+  character.
+
+Now: `CharacterMove.UpdateSprintState()` runs at the top of `Update()`, before the state ticks,
+and is the single writer of the locomotion channel. `StandState` and `WeaponMovementPose` both
+read `IsSprinting` / `IsTacSprinting`. Numbers live on `Assets/Settings/MovementTuning.asset`
+(`MovementTuning`), with a built-in fallback so a missing reference degrades instead of throwing.
+
+Two details worth keeping in mind for item 12:
+
+* There is no `Walk → TacSprint` edge in the transition table, so engaging tac sprint steps
+  through `Sprint`. That step is guarded by a `Locomotion == TacSprint` early-out — without it
+  the pair re-fires every frame and oscillates the Carry channel between `Lowered` and `Ready`.
+* Sprint is blocked by `StandState.walk`, which is driven by ADS from `CameraSwitcher`. That is
+  why aiming cancels a sprint, and it is the one piece of sprint input still living outside
+  `CharacterMove`.
 
 ## Phase 1 exit criteria
 

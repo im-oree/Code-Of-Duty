@@ -56,7 +56,11 @@ public class StandState : MoveStateBase
         var input = characterMove.InputSource;
         var inputVector = input.Move;
 
-        isSprint = (input.Held(InputActionId.Sprint) && inputVector.y > 0 && !walk);
+        // CharacterMove owns this decision now. Re-deriving it here is what let the two drift:
+        // this line used to test `inputVector.y > 0` while the tac-sprint check next door tested
+        // a different threshold, so there was a band of stick deflection where the character
+        // sprinted but could never tac sprint.
+        isSprint = characterMove.IsSprinting;
 
         Quaternion moveForward = Quaternion.Euler(0, characterMove.directionOrienter.rotation.eulerAngles.y, 0);
 

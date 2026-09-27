@@ -1,5 +1,4 @@
 using UnityEngine;
-using CodeOfDuty.Input;
 
 /// <summary>
 /// COD-style procedural weapon handling for movement states — no authored clips needed,
@@ -56,12 +55,7 @@ public class WeaponMovementPose : MonoBehaviour
     [Tooltip("How much of the FP pose the TP weapon receives.")]
     public float thirdPersonPoseScale = 0.65f;
 
-    [Header("Tac-sprint rules")]
-    [Tooltip("Master switch for tactical sprint.")]
-    public bool tacSprintEnabled = true;
-    public float doubleTapWindow = 0.35f;
-    public float tacSprintDuration = 3.5f;
-    public float tacSprintSpeedMultiplier = 1.22f;
+    // Tac-sprint rules (enable, double-tap window, duration, speed) now live on MovementTuning.
 
     [Header("Feel")]
     public float blendSpeed = 7f;
@@ -70,10 +64,6 @@ public class WeaponMovementPose : MonoBehaviour
 
     float sprintBlend, tacBlend;
     float sprintVel, tacVel;
-    bool tacActive;
-    float lastSprintTap = -10f;
-    float sprintHoldStart = -10f;
-    float tacEndTime;
     FishNet.Object.NetworkObject netObject;
     WeaponSlotRig lastPosedSlot;
 
@@ -87,8 +77,13 @@ public class WeaponMovementPose : MonoBehaviour
     /// <summary>0..1 tactical-sprint pose weight — exposed for the third-person body rig.</summary>
     public float TacBlend => tacBlend;
 
-    /// <summary>True while the player is sprint/tac-sprint moving (used to block firing).</summary>
-    public bool IsSprinting => sprintBlend > 0.35f || tacBlend > 0.35f;
+    /// <summary>
+    /// True while the player is sprinting. Forwarded from <see cref="CharacterMove"/> so that
+    /// callers blocking fire get the same answer the movement system acted on -- this used to
+    /// threshold the cosmetic blend at 0.35 while the state report thresholded it at 0.5, so
+    /// there was a window where the player counted as sprinting for one and not the other.
+    /// </summary>
+    public bool IsSprinting => characterMove != null && characterMove.IsSprinting;
 
     void Awake()
     {
@@ -104,69 +99,24 @@ public class WeaponMovementPose : MonoBehaviour
     Transform CharacterRoot =>
         characterMove != null ? characterMove.transform : transform.root;
 
-    CharacterInput characterInput;
-
     void Update()
     {
         if (!IsLocal || weaponController == null || characterMove == null) return;
 
-        if (characterInput == null) characterInput = CharacterInput.For(this);
-        var input = characterInput.Source;
-
-        // ---------------- state detection ----------------
-        // Reads intent, not the keyboard: this used to be Input.GetAxisRaw("Vertical"), which
-        // meant a stick-forward player on a gamepad could sprint but could never tac-sprint.
-        bool movingForward = input.Move.y > 0.1f;
-        bool sprintHeld = input.Held(InputActionId.Sprint);
-        bool sprinting = sprintHeld && movingForward && characterMove.isGrounded
-            && !weaponController.MeleeMode
-            && characterMove.currentState == characterMove.standState; // never pose while crouched/sliding
-
-        if (input.Pressed(InputActionId.Sprint))
-        {
-            if (InputBindings.TacSprintMode == 0 &&
-                Time.time - lastSprintTap <= doubleTapWindow && movingForward)
-            {
-                tacActive = true;
-                tacEndTime = Time.time + tacSprintDuration;
-            }
-            lastSprintTap = Time.time;
-            sprintHoldStart = Time.time;
-        }
-
-        // auto mode: tac sprint engages after sprinting continuously for a moment
-        if (InputBindings.TacSprintMode == 1 && sprinting && !tacActive &&
-            Time.time - sprintHoldStart > 1.1f)
-        {
-            tacActive = true;
-            tacEndTime = Time.time + tacSprintDuration;
-        }
-
-        // tac sprint breaks on: stopping, timer, firing, aiming
-        if (tacActive && (!sprinting || Time.time > tacEndTime ||
-            input.Held(InputActionId.Fire) || input.Held(InputActionId.Aim)))
-            tacActive = false;
-
-        if (!tacSprintEnabled) tacActive = false;
-
-        // report to the single authority (weapon handling state)
-        if (characterMove.characterState != null)
-        {
-            var wanted = tacBlend > 0.5f ? CodeOfDuty.Character.LocomotionState.TacSprint
-                       : sprintBlend > 0.5f ? CodeOfDuty.Character.LocomotionState.Sprint
-                       : CodeOfDuty.Character.LocomotionState.Idle;
-            if (characterMove.currentState == characterMove.standState)
-                characterMove.characterState.RequestLocomotion(wanted, "WeaponMovementPose.sprint");
-        }
+        // ---------------- read the movement decision ----------------
+        // This component used to make this decision itself, from its own copy of the input and
+        // its own timers. It is a cosmetic component, so that put the rules that decide how fast
+        // the character runs inside the thing that tilts the gun -- and the two copies of the
+        // rules disagreed about how far forward the stick had to be. CharacterMove owns it now;
+        // this just draws the result.
+        bool sprinting = characterMove.IsSprinting;
+        bool tacActive = characterMove.IsTacSprinting;
 
         // ---------------- blending (never snaps) ----------------
         float sprintTarget = sprinting && !tacActive ? 1f : 0f;
         float tacTarget = sprinting && tacActive ? 1f : 0f;
         sprintBlend = Mathf.SmoothDamp(sprintBlend, sprintTarget, ref sprintVel, 1f / blendSpeed);
         tacBlend = Mathf.SmoothDamp(tacBlend, tacTarget, ref tacVel, 1f / blendSpeed);
-
-        // ---------------- speed ----------------
-        characterMove.sprintSpeedMultiplier = 1f + (tacSprintSpeedMultiplier - 1f) * tacBlend;
 
         // ---------------- weapon pose (first person) ----------------
         Vector3 posePos;
