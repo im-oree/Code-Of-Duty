@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
@@ -34,16 +36,64 @@ public class EventsCenter : MonoBehaviour
     /// </summary>
     public void InvokeWeaponChange(bool changing) => OnWeaponChange?.Invoke(changing);
 
+    static readonly HashSet<string> reported = new HashSet<string>();
+
+    /// <summary>
+    /// Fire an animation event by name, delivering it to every subscriber independently.
+    ///
+    /// Each subscriber is invoked inside its own try/catch, and that is the whole point. These
+    /// events arrive in ordered batches from the animator: drawing a weapon fires the gun
+    /// position offset, then both hand IK weights, then the slot weight that actually lifts the
+    /// gun into the hands, then the parenting, then the IK targets. Previously the batch was a
+    /// single reflective Invoke over a multicast delegate, so the first subscriber to throw
+    /// aborted everything behind it -- including the slot weight. One null reference in the
+    /// first handler therefore left the player holding nothing, with hands posed for a gun that
+    /// was still sitting on its holster mount, and the only clue was a stack trace pointing at
+    /// a method that had nothing to do with the missing gun.
+    ///
+    /// Failures are logged once per event and handler, loudly enough to be fixed but without
+    /// filling the console at sixty frames a second.
+    /// </summary>
     public void EventInvoke(string eventName, object[] parameters)
     {
-        // Debug.Log(eventName);
-        var eventInfo = this.GetType().GetField(eventName, BindingFlags.Instance | BindingFlags.NonPublic);
-        if (eventInfo != null)
+        var eventInfo = GetType().GetField(eventName, BindingFlags.Instance | BindingFlags.NonPublic);
+        if (eventInfo == null)
         {
-            var eventMember = eventInfo.GetValue(this);
-            // Note : If event_member is null, nobody registered to the event, you can't call it.
-            eventMember?.GetType().GetMethod("Invoke")?.Invoke(eventMember, parameters);
+            ReportOnce("missing:" + eventName,
+                $"EventsCenter has no event named '{eventName}'. Check the animation event spelling.");
+            return;
         }
+
+        // Null simply means nobody has subscribed.
+        if (!(eventInfo.GetValue(this) is Delegate handlers)) return;
+
+        foreach (var handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler.DynamicInvoke(parameters);
+            }
+            catch (Exception exception)
+            {
+                // Reflection wraps whatever the handler threw; the inner one is the real fault.
+                Exception cause = exception is TargetInvocationException wrapped && wrapped.InnerException != null
+                    ? wrapped.InnerException
+                    : exception;
+
+                string target = handler.Method != null
+                    ? handler.Method.DeclaringType?.Name + "." + handler.Method.Name
+                    : "<unknown>";
+
+                ReportOnce(eventName + "->" + target,
+                    $"Animation event '{eventName}' failed in {target}: {cause.Message}\n{cause.StackTrace}");
+            }
+        }
+    }
+
+    static void ReportOnce(string key, string message)
+    {
+        if (!reported.Add(key)) return;
+        Debug.LogError(message);
     }
 
     private void OnEnable()

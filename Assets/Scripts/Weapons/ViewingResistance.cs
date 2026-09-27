@@ -27,11 +27,14 @@ public class ViewingResistance : MonoBehaviour
 
     void WeaponChangeCheck(bool changing)
     {
-        if (!changing)
-        {
-            resistanceForce = weaponController.GETCurrentWeapon.resistanceForce;
-            resistanceSmoothing = weaponController.GETCurrentWeapon.resistanceSmoothing;
-        }
+        if (changing) return;
+
+        // The slot can legitimately be empty for a frame around a loadout swap.
+        var weapon = weaponController != null ? weaponController.GETCurrentWeapon : null;
+        if (weapon == null) return;
+
+        resistanceForce = weapon.resistanceForce;
+        resistanceSmoothing = weapon.resistanceSmoothing;
     }
 
     private void Update()
