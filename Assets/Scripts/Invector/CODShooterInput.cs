@@ -4,9 +4,15 @@ using UnityEngine;
 /// <summary>
 /// Code Of Duty player input — the Invector shooter/melee input with:
 ///  • all bindings routed through our rebindable <see cref="InputBindings"/>
-///  • native first person view toggling (V by default) using the camera's
-///    built-in "FirstPerson" state (see vThirdPersonCamera FP integration)
 ///  • loadout slot switching (primary / secondary / melee)
+///  • native first person view toggling (V) using the camera's built-in
+///    "FirstPerson" state (see vThirdPersonCamera FP integration)
+///
+/// THIRD PERSON FIRST: the game is a third person shooter right now — every
+/// session starts (and stays) in Invector's native third person view, which
+/// is the fully tuned path. The FP toggle remains functional for testing but
+/// is not restored between sessions; FP polish is a later pass.
+///
 /// The component starts disabled on networked prefabs; CODInvectorPlayer
 /// enables it for the owning client only.
 /// </summary>
@@ -17,8 +23,8 @@ public class CODShooterInput : Invector.vCharacterController.vShooterMeleeInput
     public string firstPersonState = "FirstPerson";
     [Tooltip("Camera state used for third person view")]
     public string thirdPersonState = "Default";
-    [Tooltip("Start in first person when the saved preference says so")]
-    public bool restoreViewFromPrefs = true;
+    [Tooltip("Start in first person when the saved preference says so. OFF while the game is third-person-first — every session starts in third person and V toggles FP experimentally.")]
+    public bool restoreViewFromPrefs = false;
 
     public const string ViewModePref = "ViewMode"; // 0 = TPS, 1 = FPS
 
