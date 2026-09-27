@@ -1,333 +1,88 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 /// <summary>
-/// The main menu of CODE OF DUTY. Tabbed layout in the style of modern AAA
-/// shooters: top tab bar, big mode cards, operator gallery with realtime
-/// switching, loadout screen, placeholder tabs for future features.
+/// Behaviour for the authored StartMenu frontend.
 ///
-/// ## Baked scene objects are the single source of truth
-/// The menu (canvas, tabs, 3D stage) is BAKED into the StartMenu scene as real,
-/// saved GameObjects — visible and editable in edit mode, in play mode, on pause.
-/// <see cref="Start"/> does NOT rebuild anything: it ADOPTS the baked objects and
-/// re-attaches behavior (button listeners, input wiring, discovery) by name,
-/// because C# closures cannot survive a scene save. The build pass is idempotent
-/// find-or-create, so running it at play start is harmless if the bake is already
-/// current — and it self-heals a missing element instead of clobbering edits.
+/// This component deliberately does not create, delete, lay out, or style UI
+/// GameObjects. The complete menu hierarchy lives in StartMenu.unity under
+/// CODMainMenu/TacticalCanvas and can be edited with Unity's scene tools.
+/// This class only binds scene-authored controls to existing game systems and
+/// drives lightweight screen transitions.
 /// </summary>
-[ExecuteAlways]
-public class CODMainMenu : MonoBehaviour
+public sealed class CODMainMenu : MonoBehaviour
 {
-    const string MenuSceneName = "StartMenu";
+    const string CanvasPath = "TacticalCanvas";
 
-    /// <summary>Root all UI is built under (child object, so editor previews can be swapped cleanly).</summary>
-    [SerializeField] Transform uiRoot;
+    readonly Dictionary<string, GameObject> screens = new Dictionary<string, GameObject>();
+    readonly Dictionary<string, Button> tabs = new Dictionary<string, Button>();
+    readonly Dictionary<string, Image> tabBars = new Dictionary<string, Image>();
+    readonly Dictionary<long, CODServerResponse> servers = new Dictionary<long, CODServerResponse>();
+    readonly List<TextMeshProUGUI> lobbyRows = new List<TextMeshProUGUI>();
+    readonly Dictionary<string, TextMeshProUGUI> keyLabels = new Dictionary<string, TextMeshProUGUI>();
 
-    static bool IsEditMode => !Application.isPlaying;
-
-    #region Editor bake — the menu is REAL SAVED SCENE OBJECTS, visible at all times.
-    // In the editor the whole menu (canvas, tabs, 3D stage) is baked into the
-    // scene as plain persistent GameObjects — no HideFlags, no DontSave — so
-    // everything the player sees on play already exists in the saved scene and
-    // can be inspected/tweaked there. After every scene open / script recompile
-    // the bake is refreshed from the CURRENT code (old copy purged, new copy
-    // built in place) so code changes always reflect; save the scene to persist.
-    // At runtime Start() ADOPTS the baked objects and only re-attaches behavior —
-    // it does not destroy and rebuild them, so scene edits made in play mode stay.
-
-#if UNITY_EDITOR
-    void OnEnable()
-    {
-        if (!IsEditMode) return;
-
-        // never build during OnEnable itself (scene may still be loading)
-        UnityEditor.EditorApplication.delayCall += DeferredBakeMenu;
-    }
-
-    void OnDisable()
-    {
-        UnityEditor.EditorApplication.delayCall -= DeferredBakeMenu;
-        // baked objects are persistent scene content — nothing to destroy here
-    }
-
-    void DeferredBakeMenu()
-    {
-        if (this == null || !IsEditMode) return;
-        if (UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode) return;
-        if (!gameObject.scene.isLoaded) return;
-
-        try
-        {
-            DestroyPreview(); // purge the previous bake (and any legacy ghosts)
-            BuildCanvas();
-            BuildTopBar();
-            BuildTabs();
-            SelectTab("PLAY");
-            stage = MenuStage.Create();
-
-            // persistent scene objects: mark the scene dirty so saving keeps them
-            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
-            Debug.Log("[CODMainMenu] editor menu bake complete (build 5) — save the scene to persist it");
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogException(e);
-        }
-    }
-
-    // ---- Editor tools: diagnose and repair the baked menu scene ----
-
-    [UnityEditor.MenuItem("COD/Main Menu/Diagnose Scene")]
-    static void DiagnoseScene()
-    {
-        var menus = FindObjectsByType<CODMainMenu>(FindObjectsInactive.Include);
-        var stages = FindObjectsByType<MenuStage>(FindObjectsInactive.Include);
-        var displays = FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include);
-        var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
-
-        var report = new System.Text.StringBuilder();
-        report.AppendLine("[CODMainMenu] SCENE DIAGNOSIS (" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + ")");
-        report.AppendLine($"  CODMainMenu instances : {menus.Length}  {(menus.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
-        report.AppendLine($"  MenuStage instances   : {stages.Length}  {(stages.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
-        report.AppendLine($"  OperatorDisplay       : {displays.Length}  {(displays.Length == 1 ? "OK" : "<-- SHOULD BE 1")}");
-        report.AppendLine($"  Canvas instances      : {canvases.Length}");
-        foreach (var d in displays)
-            report.AppendLine($"    - '{d.name}' under '{(d.transform.parent != null ? d.transform.parent.name : "ROOT")}'");
-        foreach (var s in stages)
-            report.AppendLine($"    - stage '{s.name}' operatorDisplay={(s.operatorDisplay != null ? s.operatorDisplay.name : "null")}");
-
-        var menu = menus.Length > 0 ? menus[0] : null;
-        if (menu != null)
-            report.AppendLine($"  menu canvas           : {(menu.canvas != null ? menu.canvas.name : "NULL <-- UI WILL BE MISSING")}");
-
-        Debug.Log(report.ToString());
-    }
-
-    [UnityEditor.MenuItem("COD/Main Menu/Repair Scene")]
-    static void RepairScene()
-    {
-        var menu = FindAnyObjectByType<CODMainMenu>();
-        if (menu == null)
-        {
-            Debug.LogError("[CODMainMenu] no CODMainMenu in the open scene — nothing to repair.");
-            return;
-        }
-
-        try
-        {
-            menu.DestroyPreview();   // removes every duplicate/ghost
-            menu.BuildCanvas();
-            menu.BuildTopBar();
-            menu.BuildTabs();
-            menu.SelectTab("PLAY");
-            menu.stage = MenuStage.Create();
-
-            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(menu.gameObject.scene);
-            UnityEditor.SceneManagement.EditorSceneManager.SaveOpenScenes();
-            Debug.Log("[CODMainMenu] repair complete — one operator, one stage, one UI. Scene saved.");
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogException(e);
-        }
-    }
-#endif
-
-    static readonly string[] PreviewRootNames =
-    { "MenuUI", "MenuStage", "TopBar", "BottomBar", "LobbyOverlay", "OperatorDisplay", "OperatorModel", "Panel_" };
-
-    /// <summary>
-    /// Removes preview objects AND any ghosts. Sweeps by name AND by component type, because a
-    /// stale bake can leave an extra MenuStage/OperatorDisplay behind under any name — which is
-    /// exactly how you end up with two operators standing in the menu.
-    /// </summary>
-    /// <summary>Removes every menu object built by any previous version of this
-    /// code, including baked copies, editor previews, and scene-root ghosts.
-    /// Prefix matching also catches duplicates like "TopBar (1)".</summary>
-    void DestroyPreview()
-    {
-        // 1. UI built under us
-        for (int i = transform.childCount - 1; i >= 0; i--)
-        {
-            var child = transform.GetChild(i);
-            if (MatchesMenuName(child.name)) DestroyImmediate(child.gameObject);
-        }
-
-        // 2. duplicate CODMainMenu instances (duplicate menu = duplicate bakes)
-        foreach (var other in FindObjectsByType<CODMainMenu>(FindObjectsInactive.Include))
-            if (other != null && other != this)
-                DestroyImmediate(other.gameObject);
-
-        // 3. scene root, by name
-        var scene = gameObject.scene;
-        if (scene.isLoaded)
-        {
-            foreach (var root in scene.GetRootGameObjects())
-            {
-                if (root == null || root == gameObject) continue;
-                if (MatchesMenuName(root.name)) DestroyImmediate(root);
-            }
-        }
-
-        // 4. whole scene, by COMPONENT — catches renamed or leftover preview objects
-        foreach (var staleStage in FindObjectsByType<MenuStage>(FindObjectsInactive.Include))
-            if (staleStage != null) DestroyImmediate(staleStage.gameObject);
-        foreach (var staleDisplay in FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include))
-            if (staleDisplay != null) DestroyImmediate(staleDisplay.gameObject);
-
-        stage = null;
-        canvas = null;
-        tabButtons.Clear();
-        tabPanels.Clear();
-        operatorCards.Clear();
-        loadoutCards.Clear();
-    }
-
-    /// <summary>
-    /// Runtime safety net: whatever the scene contained, exactly ONE MenuStage and ONE
-    /// OperatorDisplay survive. This is the direct fix for "two characters spawn on play".
-    /// </summary>
-    void DedupePreview()
-    {
-        var stages = FindObjectsByType<MenuStage>(FindObjectsInactive.Include);
-        foreach (var s in stages)
-        {
-            if (s == null || s == stage) continue;
-            Debug.LogWarning($"[CODMainMenu] removing duplicate MenuStage '{s.name}'");
-            Destroy(s.gameObject);
-        }
-
-        OperatorDisplay keep = stage != null ? stage.operatorDisplay : null;
-        var displays = FindObjectsByType<OperatorDisplay>(FindObjectsInactive.Include);
-        foreach (var d in displays)
-        {
-            if (d == null || d == keep) continue;
-            Debug.LogWarning($"[CODMainMenu] removing duplicate OperatorDisplay '{d.name}'");
-            Destroy(d.gameObject);
-        }
-
-        // exactly one canvas for the menu
-        var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
-        var menuCanvases = new List<Canvas>();
-        foreach (var c in canvases)
-            if (c.GetComponentInParent<CODMainMenu>() != null) menuCanvases.Add(c);
-        for (int i = 1; i < menuCanvases.Count; i++)
-        {
-            Debug.LogWarning($"[CODMainMenu] removing duplicate menu Canvas '{menuCanvases[i].name}'");
-            Destroy(menuCanvases[i].gameObject);
-        }
-    }
-
-    static bool MatchesMenuName(string name)
-    {
-        foreach (var prefix in PreviewRootNames)
-            if (name.StartsWith(prefix)) return true;
-        return false;
-    }
-
-    #endregion
-
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    static void Bootstrap()
-    {
-        SceneManager.sceneLoaded -= OnSceneLoaded;
-        SceneManager.sceneLoaded += OnSceneLoaded;
-        TrySpawn(SceneManager.GetActiveScene());
-    }
-
-    static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => TrySpawn(scene);
-
-    static void TrySpawn(Scene scene)
-    {
-        if (scene.name != MenuSceneName) return;
-        if (FindAnyObjectByType<CODMainMenu>() != null) return;
-        new GameObject("CODMainMenu").AddComponent<CODMainMenu>();
-    }
-
-    [SerializeField] MenuStage stage;
-    [SerializeField] Canvas canvas;
+    Transform ui;
+    MenuStage stage;
     CODNetworkDiscovery discovery;
-
-    // tabs (rebuilt from the baked hierarchy on every startup)
-    readonly List<(string id, Button button, TextMeshProUGUI label, Image underline)> tabButtons = new();
-    readonly Dictionary<string, RectTransform> tabPanels = new();
-    [SerializeField] string activeTab;
-
-    // play tab
-    TMP_InputField nameInput;
+    TextMeshProUGUI notification;
+    TextMeshProUGUI browserStatus;
+    TextMeshProUGUI profileNameLabel;
+    GameObject hostDialog;
+    GameObject connectDialog;
+    GameObject lobbyOverlay;
     TMP_InputField hostRoomInput;
     TMP_InputField hostMaxInput;
-    TMP_InputField directIpInput;
-    RectTransform browserContent;
-    TextMeshProUGUI browserStatus;
-    readonly Dictionary<long, CODServerResponse> foundServers = new();
-    bool quickSearching;
+    TMP_InputField directAddressInput;
+    TMP_InputField profileNameInput;
+    string activeScreen;
+    string awaitingBind;
+    Coroutine transition;
 
-    // lobby overlay
-    CanvasGroup lobbyGroup;
-    RectTransform lobbyList;
-    TextMeshProUGUI lobbyTitle;
-    Button lobbyStartButton;
-
-    // operators / loadout live state (rebuilt from the baked cards on every run)
-    readonly List<(int index, Image frame)> operatorCards = new();
-    readonly List<List<(string id, Image frame)>> loadoutCards = new();
-    List<List<WeaponDatabase.Entry>> loadoutOptions;
-    List<int> loadoutSelection;
-
-    void Awake()
-    {
-        // earliest possible cleanup: a saved scene may contain baked menu
-        // copies (or ghosts from older versions) — wipe them before anything
-        // else runs so play mode ALWAYS starts from a clean slate.
-        if (!IsEditMode) Phase("awake purge", DestroyPreview);
-    }
+    static readonly Color Accent = new Color(1f, 0.48f, 0.06f, 1f);
+    static readonly Color Muted = new Color(0.52f, 0.57f, 0.64f, 1f);
 
     void Start()
     {
-        if (IsEditMode) return;
-
-        // Each phase is isolated: one broken subsystem (stage, network, vfx)
-        // must NEVER take the whole menu UI down with it.
-        Phase("purge baked copy", DestroyPreview); // replaced by the live wired build below
-        Phase("hide legacy menu", HideLegacyMenu);
-        Phase("3D stage", () => stage = MenuStage.Create());
-        Phase("network manager", () =>
+        ui = transform.Find(CanvasPath);
+        if (ui == null)
         {
-            var manager = CODNetworkManager.EnsureExists();
-            discovery = manager != null ? manager.discovery : null;
-        });
-        Phase("dedupe preview", DedupePreview);
-        Phase("menu UI", () =>
-        {
-            BuildCanvas();
-            BuildTopBar();
-            BuildTabs();
-            BuildLobbyOverlay();
-            SelectTab("PLAY");
-        });
-        Phase("lobby events", () =>
-        {
-            CODLobbyPlayer.LobbyChanged += RefreshLobby;
-            CODLobbyPlayer.LocalPlayerJoined += ShowLobby;
-            CODNetworkManager.ClientError += OnClientError;
-        });
-        Phase("server discovery", StartBrowserDiscovery);
-
-        Debug.Log("[CODMainMenu] runtime menu build finished (build 5)");
-    }
-
-    static void Phase(string label, System.Action action)
-    {
-        try { action(); }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"[CODMainMenu] phase '{label}' failed — menu continues without it. {e}");
+            Debug.LogError("[CODMainMenu] StartMenu is missing the authored TacticalCanvas. The menu will not construct a replacement at runtime.");
+            enabled = false;
+            return;
         }
+
+        // The old MenuUI remains in this scene only as a disabled historical
+        // layer. Keeping it disabled means a previous runtime builder can never
+        // overlap or recreate the authored frontend.
+        Transform legacy = transform.Find("MenuUI");
+        if (legacy != null && legacy.gameObject.activeSelf) legacy.gameObject.SetActive(false);
+
+        stage = MenuStage.EnsureInScene();
+        if (stage == null)
+            Debug.LogError("[CODMainMenu] StartMenu is missing its authored MenuStage.");
+
+        CacheSceneReferences();
+        BindSceneControls();
+
+        var manager = CODNetworkManager.EnsureExists();
+        discovery = manager != null ? manager.discovery : null;
+        if (discovery != null) discovery.OnServerFound.AddListener(OnServerFound);
+
+        CODLobbyPlayer.LobbyChanged += RefreshLobby;
+        CODLobbyPlayer.LocalPlayerJoined += ShowLobby;
+        CODNetworkManager.ClientError += OnClientError;
+
+        SwitchScreen("PLAY", true);
+        RefreshProfile();
+        RefreshSettings();
+        RefreshLoadout();
+        RefreshOperatorCards();
+        RefreshKeyLabels();
+        StartBrowserDiscovery();
     }
 
     void OnDestroy()
@@ -338,696 +93,569 @@ public class CODMainMenu : MonoBehaviour
         if (discovery != null) discovery.OnServerFound.RemoveListener(OnServerFound);
     }
 
-    static void HideLegacyMenu()
+    #region Scene binding
+
+    void CacheSceneReferences()
     {
-        foreach (var canvas in FindObjectsByType<Canvas>(FindObjectsInactive.Include))
+        foreach (string id in new[] { "PLAY", "LOADOUT", "OPERATORS", "CAREER", "SETTINGS" })
         {
-            if (canvas.GetComponentInParent<CODMainMenu>() == null)
-                canvas.gameObject.SetActive(false);
-        }
-    }
-
-    #region Canvas & top bar
-
-    void BuildCanvas()
-    {
-        var root = new GameObject("MenuUI");
-        root.transform.SetParent(transform, false);
-        uiRoot = root.transform;
-
-        canvas = root.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 50;
-        var scaler = root.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        scaler.matchWidthOrHeight = 0.5f;
-        root.AddComponent<GraphicRaycaster>();
-    }
-
-    void BuildTopBar()
-    {
-        // full-width strip behind the tab bar (stretch-anchored so children
-        // measure from the real screen edge on every resolution)
-        var bar = UITheme.Image("TopBar", uiRoot, new Color(0f, 0f, 0f, 0.55f));
-        var barRect = bar.rectTransform;
-        barRect.anchorMin = new Vector2(0f, 1f);
-        barRect.anchorMax = new Vector2(1f, 1f);
-        barRect.pivot = new Vector2(0.5f, 1f);
-        barRect.offsetMin = new Vector2(0f, -86f);
-        barRect.offsetMax = Vector2.zero;
-
-        var title = UITheme.Text("Logo", bar.transform, "CODE OF DUTY", 30, UITheme.TextMain,
-            FontStyles.Bold | FontStyles.Italic);
-        UITheme.TL(title.rectTransform, 48, 24, 420, 40);
-        title.characterSpacing = 2;
-
-        var accent = UITheme.Image("LogoAccent", bar.transform, UITheme.Accent);
-        UITheme.TL(accent.rectTransform, 48, 66, 258, 3);
-
-        // tab buttons
-        string[] tabs = { "PLAY", "OPERATORS", "LOADOUT", "BARRACKS", "STORE", "SETTINGS" };
-        float x = 520;
-        foreach (string tab in tabs)
-        {
-            string id = tab;
-            var img = UITheme.Image($"Tab_{tab}", bar.transform, Color.clear);
-            UITheme.TL(img.rectTransform, x, 18, 170, 52);
-            var button = img.gameObject.AddComponent<Button>();
-            button.onClick.AddListener(() => SelectTab(id));
-
-            var label = UITheme.Text("Label", img.transform, tab, 21, UITheme.TextDim,
-                FontStyles.Bold, TextAlignmentOptions.Center);
-            UITheme.Stretch(label.rectTransform);
-            label.characterSpacing = 4;
-
-            var underline = UITheme.Image("Underline", img.transform, Color.clear);
-            UITheme.Place(underline.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                new Vector2(0f, 2f), new Vector2(120, 3));
-
-            tabButtons.Add((id, button, label, underline));
-            x += 178;
+            screens[id] = FindObject("Screens/Screen_" + id);
+            tabs[id] = Find<Button>("TopNav/Tab_" + id);
+            tabBars[id] = Find<Image>("TopNav/Tab_" + id + "/ActiveBar");
         }
 
-        // player identity, right side
-        var nameLabel = UITheme.Text("NameLabel", bar.transform, "OPERATOR ID", 12, UITheme.TextDim, FontStyles.Bold);
-        UITheme.Place(nameLabel.rectTransform, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-250, -16), new Vector2(200, 16));
+        notification = Find<TextMeshProUGUI>("Toast/Message");
+        browserStatus = Find<TextMeshProUGUI>("Screens/Screen_PLAY/BrowserPanel/Status");
+        profileNameLabel = Find<TextMeshProUGUI>("TopNav/ProfileButton/Name");
+        hostDialog = FindObject("Overlays/HostDialog");
+        connectDialog = FindObject("Overlays/ConnectDialog");
+        lobbyOverlay = FindObject("Overlays/LobbyOverlay");
 
-        nameInput = UITheme.Input("NameInput", bar.transform, "Player", new Vector2(200, 34));
-        UITheme.Place(((RectTransform)nameInput.transform), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-50, -34), new Vector2(200, 34));
-        nameInput.text = CODNetworkManager.PlayerName;
-        nameInput.onEndEdit.AddListener(value =>
-        {
-            if (!string.IsNullOrWhiteSpace(value)) CODNetworkManager.PlayerName = value.Trim();
-        });
+        hostRoomInput = Find<TMP_InputField>("Overlays/HostDialog/Panel/Input_HostRoom");
+        hostMaxInput = Find<TMP_InputField>("Overlays/HostDialog/Panel/Input_HostCapacity");
+        directAddressInput = Find<TMP_InputField>("Overlays/ConnectDialog/Panel/Input_Address");
+        profileNameInput = Find<TMP_InputField>("Screens/Screen_CAREER/ProfileCard/Input_ProfileName");
 
-        // bottom bar: version + quit (full-width, stretch-anchored)
-        var bottom = UITheme.Image("BottomBar", uiRoot, new Color(0f, 0f, 0f, 0.45f));
-        var bottomRect = bottom.rectTransform;
-        bottomRect.anchorMin = new Vector2(0f, 0f);
-        bottomRect.anchorMax = new Vector2(1f, 0f);
-        bottomRect.pivot = new Vector2(0.5f, 0f);
-        bottomRect.offsetMin = Vector2.zero;
-        bottomRect.offsetMax = new Vector2(0f, 46f);
+        for (int i = 0; i < 8; i++)
+            lobbyRows.Add(Find<TextMeshProUGUI>($"Overlays/LobbyOverlay/Roster/PlayerRow_{i}/Name"));
 
-        var hint = UITheme.Text("Hint", bottom.transform, "LAN OPERATIONS  //  SERVER-AUTHORITATIVE  //  ALPHA BUILD", 13,
-            UITheme.TextDim, FontStyles.Normal, TextAlignmentOptions.Left);
-        UITheme.TL(hint.rectTransform, 48, 14, 800, 20);
-        hint.characterSpacing = 3;
-
-        UITheme.Place(((RectTransform)UITheme.Button("Quit", bottom.transform, "QUIT GAME", 14,
-            new Color(0.5f, 0.12f, 0.1f, 0.9f), UITheme.TextMain, Application.Quit).transform),
-            new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-24, 0), new Vector2(130, 32));
+        foreach (var binding in InputBindings.Actions)
+            keyLabels[binding.id] = Find<TextMeshProUGUI>("Screens/Screen_SETTINGS/Keybinds/Bind_" + binding.id + "/Value");
     }
 
-    void SelectTab(string id)
+    void BindSceneControls()
     {
-        activeTab = id;
-        foreach (var (tabId, _, label, underline) in tabButtons)
+        foreach (var pair in tabs)
         {
-            bool active = tabId == id;
-            label.color = active ? UITheme.TextMain : UITheme.TextDim;
-            underline.color = active ? UITheme.Accent : Color.clear;
+            string screenId = pair.Key;
+            Bind(pair.Value, () => SwitchScreen(screenId));
         }
-        foreach (var pair in tabPanels)
+
+        Bind("TopNav/ProfileButton", () => SwitchScreen("CAREER"));
+        Bind("TopNav/SettingsButton", () => SwitchScreen("SETTINGS"));
+        Bind("TopNav/QuitButton", QuitGame);
+
+        // PLAY: each operation routes to an existing network entry point.
+        Bind("Screens/Screen_PLAY/Operations/Action_QuickPlay", QuickPlay);
+        Bind("Screens/Screen_PLAY/Operations/Action_Host", () => OpenOverlay(hostDialog));
+        Bind("Screens/Screen_PLAY/Operations/Action_Browser", OpenBrowser);
+        Bind("Screens/Screen_PLAY/Operations/Action_DirectConnect", () => OpenOverlay(connectDialog));
+        Bind("Screens/Screen_PLAY/Operations/Action_Solo", StartSolo);
+        Bind("Overlays/HostDialog/Panel/Button_Host", HostMatch);
+        Bind("Overlays/HostDialog/Panel/Button_Cancel", CloseOverlays);
+        Bind("Overlays/ConnectDialog/Panel/Button_Connect", DirectConnect);
+        Bind("Overlays/ConnectDialog/Panel/Button_Cancel", CloseOverlays);
+        for (int i = 0; i < 5; i++)
         {
-            if (pair.Value.gameObject.activeSelf != (pair.Key == id))
-                pair.Value.gameObject.SetActive(pair.Key == id);
-            if (pair.Key == id)
-            {
-                if (Application.isPlaying) StartCoroutine(FadeIn(pair.Value));
-                else
-                {
-                    var g = pair.Value.GetComponent<CanvasGroup>();
-                    if (g != null) g.alpha = 1f;
-                    pair.Value.anchoredPosition = Vector2.zero;
-                }
-            }
+            int row = i;
+            Bind("Screens/Screen_PLAY/BrowserPanel/ServerRow_" + i, () => JoinServerRow(row));
         }
+
+        // LOADOUT: cards are authored in the scene and map directly to the
+        // actual WeaponDatabase ids used by PlayerLoadout.
+        Bind("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_N4_Rifle", () => SetPrimary("N4_Rifle"));
+        Bind("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_Saga_Rifle", () => SetPrimary("Saga_Rifle"));
+        Bind("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_P6_SMG", () => SetPrimary("P6_SMG"));
+        Bind("Screens/Screen_LOADOUT/SecondaryWeapons/Weapon_Glok_Pistol", () => SetSecondary("Glok_Pistol"));
+
+        // OPERATORS: the two visible scene cards reflect the two entries in
+        // CharacterSkinLibrary, rather than inventing unavailable operators.
+        Bind("Screens/Screen_OPERATORS/OperatorCards/Operator_Crimson", () => SetOperator(0));
+        Bind("Screens/Screen_OPERATORS/OperatorCards/Operator_Cobalt", () => SetOperator(1));
+
+        Bind("Screens/Screen_CAREER/ProfileCard/Button_SaveProfile", SaveProfile);
+
+        // SETTINGS: all visual controls are scene-authored; these bindings only
+        // apply the values through the existing GameSettings/InputBindings APIs.
+        Bind("Screens/Screen_SETTINGS/Audio/MasterRow/Button_MasterMinus", () => { GameSettings.MasterVolume -= .05f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Audio/MasterRow/Button_MasterPlus", () => { GameSettings.MasterVolume += .05f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Video/FovRow/Button_FovMinus", () => { GameSettings.FieldOfView -= 5f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Video/FovRow/Button_FovPlus", () => { GameSettings.FieldOfView += 5f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Video/RenderRow/Button_RenderMinus", () => { GameSettings.RenderScale -= .1f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Video/RenderRow/Button_RenderPlus", () => { GameSettings.RenderScale += .1f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Video/ShadowRow/Button_ShadowMinus", () => { GameSettings.ShadowDistance -= 10f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Video/ShadowRow/Button_ShadowPlus", () => { GameSettings.ShadowDistance += 10f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Video/QualityRow/Button_Quality", CycleQuality);
+        Bind("Screens/Screen_SETTINGS/Video/MSAARow/Button_MSAA", CycleMsaa);
+        Bind("Screens/Screen_SETTINGS/Video/VSyncRow/Button_VSync", () => { GameSettings.VSync = !GameSettings.VSync; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Video/FullscreenRow/Button_Fullscreen", () => { GameSettings.Fullscreen = !GameSettings.Fullscreen; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Controls/SensitivityRow/Button_SensitivityMinus", () => { GameSettings.MouseSensitivity -= .1f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Controls/SensitivityRow/Button_SensitivityPlus", () => { GameSettings.MouseSensitivity += .1f; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Controls/CrouchRow/Button_Crouch", () => { InputBindings.CrouchIsToggle = !InputBindings.CrouchIsToggle; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Controls/TacSprintRow/Button_TacSprint", () => { InputBindings.TacSprintMode = 1 - InputBindings.TacSprintMode; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Controls/FireSprintRow/Button_FireSprint", () => { InputBindings.FireWhileSprinting = !InputBindings.FireWhileSprinting; RefreshSettings(); });
+        Bind("Screens/Screen_SETTINGS/Keybinds/Button_ResetBinds", () => { InputBindings.ResetToDefaults(); RefreshKeyLabels(); ShowToast("KEYBINDS RESET"); });
+
+        foreach (var binding in InputBindings.Actions)
+        {
+            string id = binding.id;
+            Bind("Screens/Screen_SETTINGS/Keybinds/Bind_" + id, () => BeginRebind(id));
+        }
+
+        Bind("Overlays/LobbyOverlay/Button_Start", BeginLobbyGame);
+        Bind("Overlays/LobbyOverlay/Button_Leave", LeaveLobby);
     }
 
-    IEnumerator FadeIn(RectTransform panel)
+    GameObject FindObject(string path)
     {
-        var group = panel.GetComponent<CanvasGroup>();
-        if (group == null) group = panel.gameObject.AddComponent<CanvasGroup>();
-        Vector2 basePos = Vector2.zero;
-        float t = 0f;
-        while (t < 1f)
-        {
-            t += Time.deltaTime * 5f;
-            float eased = 1f - Mathf.Pow(1f - Mathf.Clamp01(t), 3f);
-            group.alpha = eased;
-            panel.anchoredPosition = basePos + new Vector2(0f, -18f * (1f - eased));
-            yield return null;
-        }
-        group.alpha = 1f;
-        panel.anchoredPosition = basePos;
+        Transform result = ui != null ? ui.Find(path) : null;
+        if (result == null) Debug.LogError("[CODMainMenu] authored control missing: " + CanvasPath + "/" + path);
+        return result != null ? result.gameObject : null;
     }
 
-    RectTransform CreateTabPanel(string id)
+    T Find<T>(string path) where T : Component
     {
-        var panel = UITheme.Rect($"Panel_{id}", uiRoot);
-        UITheme.Stretch(panel);
-        panel.offsetMin = new Vector2(0, 46);
-        panel.offsetMax = new Vector2(0, -86);
-        panel.gameObject.SetActive(false);
-        tabPanels[id] = panel;
-        return panel;
+        GameObject gameObject = FindObject(path);
+        if (gameObject == null) return null;
+        T component = gameObject.GetComponent<T>();
+        if (component == null) Debug.LogError("[CODMainMenu] authored control has no " + typeof(T).Name + ": " + path);
+        return component;
+    }
+
+    void Bind(string path, UnityEngine.Events.UnityAction action) => Bind(Find<Button>(path), action);
+
+    static void Bind(Button button, UnityEngine.Events.UnityAction action)
+    {
+        if (button == null) return;
+
+        // This is the concrete NullReferenceException path reported for the
+        // old menu: a Button authored while inactive can deserialize with a
+        // null persistent-click event. Calling RemoveAllListeners on that
+        // object aborts the rest of the menu binding. Restore the event object
+        // before wiring this already-authored Button; no UI object is created.
+        if (button.onClick == null)
+        {
+            Debug.LogWarning("[CODMainMenu] restored a missing Button.onClick event on '" + button.name + "'.");
+            button.onClick = new Button.ButtonClickedEvent();
+        }
+
+        button.onClick.RemoveAllListeners();
+        button.onClick.AddListener(action);
     }
 
     #endregion
 
-    #region PLAY tab
+    #region Navigation and motion
 
-    void BuildTabs()
+    void SwitchScreen(string id, bool immediate = false)
     {
-        // one broken tab must never take the other five down with it
-        Phase("PLAY tab", BuildPlayTab);
-        Phase("OPERATORS tab", BuildOperatorsTab);
-        Phase("LOADOUT tab", BuildLoadoutTab);
-        Phase("BARRACKS tab", BuildBarracksTab);
-        Phase("STORE tab", BuildStoreTab);
-        Phase("SETTINGS tab", BuildSettingsTab);
-    }
+        if (!screens.ContainsKey(id) || screens[id] == null) return;
+        if (activeScreen == id && !immediate) return;
 
-    void BuildSettingsTab()
-    {
-        var panel = CreateTabPanel("SETTINGS");
-
-        var header = UITheme.Text("Header", panel, "SETTINGS", 30, UITheme.TextMain, FontStyles.Bold);
-        UITheme.TL(header.rectTransform, 48, 36, 600, 40);
-        header.characterSpacing = 3;
-
-        // reusable panel (same one the in-game pause menu embeds)
-        var host = UITheme.Image("SettingsHost", panel, UITheme.Panel);
-        host.rectTransform.anchorMin = new Vector2(0f, 0f);
-        host.rectTransform.anchorMax = new Vector2(0f, 1f);
-        host.rectTransform.pivot = new Vector2(0f, 1f);
-        host.rectTransform.anchoredPosition = new Vector2(48f, -100f);
-        host.rectTransform.sizeDelta = new Vector2(760f, -160f);
-        SettingsPanel.Build(host.transform);
-    }
-
-    void BuildPlayTab()
-    {
-        var panel = CreateTabPanel("PLAY");
-
-        // left column: mode cards
-        float y = 40;
-        y = AddModeCard(panel, y, "QUICK PLAY", "Find and join the first LAN match available.", OnQuickPlay);
-        y = AddModeCard(panel, y, "HOST MATCH", "Create a LAN room others can join.", null, card =>
+        foreach (var pair in screens)
         {
-            hostRoomInput = UITheme.Input("RoomName", card, "Room name", new Vector2(190, 34));
-            UITheme.TL((RectTransform)hostRoomInput.transform, 24, 88, 190, 34);
-            hostMaxInput = UITheme.Input("MaxPlayers", card, "Max", new Vector2(64, 34));
-            UITheme.TL((RectTransform)hostMaxInput.transform, 224, 88, 64, 34);
-            hostMaxInput.text = "8";
-            var host = UITheme.Button("Host", card, "HOST", 16, UITheme.Accent, UITheme.TextOnAccent, OnHostMatch);
-            UITheme.TL((RectTransform)host.transform, 300, 88, 110, 34);
-        }, 140);
-        y = AddModeCard(panel, y, "DIRECT CONNECT", "Join a server by IP address.", null, card =>
-        {
-            directIpInput = UITheme.Input("Ip", card, "192.168.x.x", new Vector2(266, 34));
-            UITheme.TL((RectTransform)directIpInput.transform, 24, 88, 266, 34);
-            var join = UITheme.Button("Join", card, "JOIN", 16, UITheme.Accent, UITheme.TextOnAccent, OnDirectConnect);
-            UITheme.TL((RectTransform)join.transform, 300, 88, 110, 34);
-        }, 140);
-        AddModeCard(panel, y, "PRIVATE MATCH", "Solo warm-up against the arena. Internal server, no LAN.", () =>
-        {
-            CODNetworkManager.EnsureExists()?.StartSoloGame();
-        });
-
-        // right column: server browser
-        var browser = UITheme.Image("Browser", panel, UITheme.Panel);
-        UITheme.Place(browser.rectTransform, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-48, -40), new Vector2(420, 560));
-
-        var header = UITheme.Text("Header", browser.transform, "LAN SERVERS", 20, UITheme.Accent, FontStyles.Bold);
-        UITheme.TL(header.rectTransform, 22, 18, 300, 26);
-        header.characterSpacing = 3;
-
-        browserStatus = UITheme.Text("Status", browser.transform, "Scanning local network...", 14, UITheme.TextDim);
-        UITheme.TL(browserStatus.rectTransform, 22, 50, 360, 20);
-
-        browserContent = UITheme.Rect("List", browser.transform);
-        UITheme.Stretch(browserContent);
-        browserContent.offsetMin = new Vector2(14, 14);
-        browserContent.offsetMax = new Vector2(-14, -80);
-    }
-
-    float AddModeCard(RectTransform parent, float y, string title, string subtitle,
-        UnityEngine.Events.UnityAction onClick, System.Action<RectTransform> extraContent = null, float height = 108)
-    {
-        var card = UITheme.Image($"Card_{title}", parent, UITheme.Panel);
-        UITheme.TL(card.rectTransform, 48, y, 430, height);
-
-        var edge = UITheme.Image("Edge", card.transform, UITheme.Accent);
-        UITheme.Place(edge.rectTransform, new Vector2(0, 0.5f), new Vector2(0, 0.5f), Vector2.zero, new Vector2(4, height));
-
-        var titleText = UITheme.Text("Title", card.transform, title, 24, UITheme.TextMain, FontStyles.Bold);
-        UITheme.TL(titleText.rectTransform, 24, 18, 380, 30);
-        titleText.characterSpacing = 2;
-
-        var subText = UITheme.Text("Sub", card.transform, subtitle, 14, UITheme.TextDim);
-        UITheme.TL(subText.rectTransform, 24, 52, 386, 40);
-        subText.textWrappingMode = TextWrappingModes.Normal;
-
-        if (onClick != null)
-        {
-            var button = card.gameObject.AddComponent<Button>();
-            button.targetGraphic = card;
-            var colors = button.colors;
-            colors.highlightedColor = new Color(1.6f, 1.6f, 1.6f, 1f);
-            colors.pressedColor = new Color(2f, 2f, 2f, 1f);
-            button.colors = colors;
-            button.onClick.AddListener(onClick);
+            bool selected = pair.Key == id;
+            if (pair.Value != null) pair.Value.SetActive(selected);
+            if (tabBars.TryGetValue(pair.Key, out Image bar) && bar != null) bar.enabled = selected;
+            if (tabs.TryGetValue(pair.Key, out Button tab) && tab != null)
+            {
+                var text = tab.GetComponentInChildren<TextMeshProUGUI>(true);
+                if (text != null) text.color = selected ? Accent : Muted;
+            }
         }
 
-        extraContent?.Invoke(card.rectTransform);
-        return y + height + 18;
+        activeScreen = id;
+        if (transition != null) StopCoroutine(transition);
+        if (!immediate) transition = StartCoroutine(AnimateScreen(screens[id].transform as RectTransform));
     }
+
+    IEnumerator AnimateScreen(RectTransform target)
+    {
+        if (target == null) yield break;
+        target.localScale = new Vector3(.985f, .985f, 1f);
+        Vector2 finalPosition = target.anchoredPosition;
+        target.anchoredPosition = finalPosition + new Vector2(22f, 0f);
+        for (float t = 0f; t < 1f; t += Time.unscaledDeltaTime * 7f)
+        {
+            float eased = 1f - Mathf.Pow(1f - Mathf.Clamp01(t), 3f);
+            target.localScale = Vector3.Lerp(new Vector3(.985f, .985f, 1f), Vector3.one, eased);
+            target.anchoredPosition = Vector2.Lerp(finalPosition + new Vector2(22f, 0f), finalPosition, eased);
+            yield return null;
+        }
+        target.localScale = Vector3.one;
+        target.anchoredPosition = finalPosition;
+    }
+
+    void OpenOverlay(GameObject overlay)
+    {
+        CloseOverlays();
+        if (overlay == null) return;
+        overlay.SetActive(true);
+        StartCoroutine(AnimateOverlay(overlay.transform as RectTransform));
+    }
+
+    IEnumerator AnimateOverlay(RectTransform target)
+    {
+        if (target == null) yield break;
+        target.localScale = new Vector3(.92f, .92f, 1f);
+        for (float t = 0f; t < 1f; t += Time.unscaledDeltaTime * 9f)
+        {
+            target.localScale = Vector3.Lerp(new Vector3(.92f, .92f, 1f), Vector3.one, 1f - Mathf.Pow(1f - Mathf.Clamp01(t), 3f));
+            yield return null;
+        }
+        target.localScale = Vector3.one;
+    }
+
+    void CloseOverlays()
+    {
+        if (hostDialog != null) hostDialog.SetActive(false);
+        if (connectDialog != null) connectDialog.SetActive(false);
+    }
+
+    #endregion
+
+    #region Network flow
 
     void StartBrowserDiscovery()
     {
-        if (discovery == null || CODNetworkManager.SessionActive) return;
-        discovery.OnServerFound.AddListener(OnServerFound);
+        if (discovery == null) return;
         discovery.StartDiscovery();
+        if (browserStatus != null) browserStatus.text = "SCANNING LOCAL NETWORK…";
     }
 
-    void OnServerFound(CODServerResponse info)
+    void QuickPlay()
     {
-        foundServers[info.serverId] = info;
-
-        if (quickSearching)
+        SwitchScreen("PLAY");
+        StartBrowserDiscovery();
+        foreach (var response in servers.Values)
         {
-            quickSearching = false;
-            CODNetworkManager.Instance?.JoinGame(info.address);
+            Join(response);
             return;
         }
-
-        RebuildBrowser();
+        ShowToast("SCANNING FOR A LAN OPERATION");
     }
 
-    void RebuildBrowser()
+    void OpenBrowser()
     {
-        foreach (Transform child in browserContent) Destroy(child.gameObject);
-        browserStatus.text = foundServers.Count == 0
-            ? "Scanning local network..."
-            : $"{foundServers.Count} match(es) found";
+        StartBrowserDiscovery();
+        ShowToast("SERVER BROWSER REFRESHED");
+    }
 
-        float y = 0;
-        foreach (var info in foundServers.Values)
+    void OnServerFound(CODServerResponse response)
+    {
+        servers[response.serverId] = response;
+        RefreshServerRows();
+    }
+
+    void RefreshServerRows()
+    {
+        var all = new List<CODServerResponse>(servers.Values);
+        all.Sort((a, b) => string.Compare(a.serverName, b.serverName, StringComparison.OrdinalIgnoreCase));
+        for (int i = 0; i < 5; i++)
         {
-            var row = UITheme.Image($"Server_{info.serverId}", browserContent, UITheme.PanelSoft);
-            UITheme.TL(row.rectTransform, 0, y, 392, 56);
-
-            var name = UITheme.Text("Name", row.transform, info.serverName, 17, UITheme.TextMain, FontStyles.Bold);
-            UITheme.TL(name.rectTransform, 14, 8, 240, 22);
-            var players = UITheme.Text("Players", row.transform, $"{info.players}/{info.maxPlayers} OPERATORS  ·  {info.address}", 12, UITheme.TextDim);
-            UITheme.TL(players.rectTransform, 14, 32, 300, 16);
-
-            string address = info.address;
-            var join = UITheme.Button("Join", row.transform, "JOIN", 14, UITheme.Accent, UITheme.TextOnAccent,
-                () => CODNetworkManager.Instance?.JoinGame(address));
-            UITheme.Place((RectTransform)join.transform, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-10, 0), new Vector2(72, 34));
-
-            y += 62;
+            Transform row = ui.Find("Screens/Screen_PLAY/BrowserPanel/ServerRow_" + i);
+            if (row == null) continue;
+            TextMeshProUGUI title = row.Find("Title")?.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI meta = row.Find("Meta")?.GetComponent<TextMeshProUGUI>();
+            bool hasServer = i < all.Count;
+            row.gameObject.SetActive(true);
+            if (title != null) title.text = hasServer ? all[i].serverName.ToUpperInvariant() : "NO SIGNAL";
+            if (meta != null) meta.text = hasServer ? $"{all[i].players}/{all[i].maxPlayers} PLAYERS  ·  {all[i].address}" : "WAITING FOR LAN BROADCAST";
+            var image = row.GetComponent<Image>();
+            if (image != null) image.color = hasServer ? new Color(.09f, .115f, .145f, .96f) : new Color(.045f, .055f, .07f, .78f);
         }
+        if (browserStatus != null)
+            browserStatus.text = all.Count == 0 ? "SCANNING LOCAL NETWORK…" : all.Count + " OPERATION" + (all.Count == 1 ? "" : "S") + " AVAILABLE";
     }
 
-    void OnQuickPlay()
+    void JoinServerRow(int row)
     {
-        if (CODNetworkManager.SessionActive) return;
-
-        if (foundServers.Count > 0)
+        var all = new List<CODServerResponse>(servers.Values);
+        all.Sort((a, b) => string.Compare(a.serverName, b.serverName, StringComparison.OrdinalIgnoreCase));
+        if (row < 0 || row >= all.Count)
         {
-            foreach (var info in foundServers.Values)
-            {
-                CODNetworkManager.Instance?.JoinGame(info.address);
-                return;
-            }
+            ShowToast("NO SERVER IN THIS CHANNEL");
+            return;
         }
-
-        quickSearching = true;
-        browserStatus.text = "Searching for a match...";
-        if (discovery != null) discovery.StartDiscovery();
+        Join(all[row]);
     }
 
-    void OnHostMatch()
+    void Join(CODServerResponse response)
     {
-        if (CODNetworkManager.SessionActive) return;
-        if (!int.TryParse(hostMaxInput.text, out int max) || max < 1) max = 8;
-        CODNetworkManager.EnsureExists()?.HostLanGame(hostRoomInput.text, max, true);
+        if (response.port != 0 && CODNetworkManager.Instance != null)
+            CODNetworkManager.Instance.port = response.port;
+        CODNetworkManager.EnsureExists()?.JoinGame(response.address);
+        ShowToast("CONNECTING TO " + response.serverName.ToUpperInvariant());
     }
 
-    void OnDirectConnect()
+    void HostMatch()
     {
-        string address = directIpInput.text.Trim();
-        if (string.IsNullOrEmpty(address) || CODNetworkManager.SessionActive) return;
+        string room = hostRoomInput != null ? hostRoomInput.text.Trim() : "";
+        int capacity = 8;
+        if (hostMaxInput != null) int.TryParse(hostMaxInput.text, out capacity);
+        capacity = Mathf.Clamp(capacity, 1, 16);
+        CloseOverlays();
+        CODNetworkManager.EnsureExists()?.HostLanGame(room, capacity, true);
+        ShowToast("HOSTING LAN OPERATION");
+    }
+
+    void DirectConnect()
+    {
+        string address = directAddressInput != null ? directAddressInput.text.Trim() : "";
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            ShowToast("ENTER A SERVER ADDRESS");
+            return;
+        }
+        CloseOverlays();
         CODNetworkManager.EnsureExists()?.JoinGame(address);
+        ShowToast("CONNECTING TO " + address.ToUpperInvariant());
     }
 
-    void OnClientError(string message)
+    void StartSolo()
     {
-        if (browserStatus != null) browserStatus.text = message;
-        HideLobby();
+        CODNetworkManager.EnsureExists()?.StartSoloGame();
+        ShowToast("STARTING SOLO TRAINING");
     }
+
+    void OnClientError(string message) => ShowToast(string.IsNullOrWhiteSpace(message) ? "CONNECTION FAILED" : message.ToUpperInvariant());
 
     #endregion
 
-    #region Lobby overlay
-
-    void BuildLobbyOverlay()
-    {
-        var dim = UITheme.Image("LobbyOverlay", uiRoot, new Color(0f, 0f, 0f, 0.72f));
-        UITheme.Stretch(dim.rectTransform);
-        lobbyGroup = dim.gameObject.AddComponent<CanvasGroup>();
-
-        var panel = UITheme.Image("LobbyPanel", dim.transform, UITheme.Panel);
-        UITheme.Place(panel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 560));
-
-        lobbyTitle = UITheme.Text("Title", panel.transform, "LOBBY", 26, UITheme.Accent, FontStyles.Bold, TextAlignmentOptions.Center);
-        UITheme.Place(lobbyTitle.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -24), new Vector2(400, 34));
-        lobbyTitle.characterSpacing = 4;
-
-        lobbyList = UITheme.Rect("Players", panel.transform);
-        UITheme.Stretch(lobbyList);
-        lobbyList.offsetMin = new Vector2(30, 96);
-        lobbyList.offsetMax = new Vector2(-30, -80);
-
-        lobbyStartButton = UITheme.Button("Start", panel.transform, "START MATCH", 19, UITheme.Accent, UITheme.TextOnAccent,
-            () => CODNetworkManager.Instance?.BeginGame());
-        UITheme.Place((RectTransform)lobbyStartButton.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 88), new Vector2(300, 48));
-
-        var leave = UITheme.Button("Leave", panel.transform, "LEAVE", 15, UITheme.PanelSoft, UITheme.TextMain, () =>
-        {
-            CODNetworkManager.Instance?.Leave();
-            HideLobby();
-        });
-        UITheme.Place((RectTransform)leave.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 30), new Vector2(300, 42));
-
-        dim.gameObject.SetActive(false);
-    }
+    #region Lobby
 
     void ShowLobby()
     {
-        lobbyGroup.gameObject.SetActive(true);
-        var manager = CODNetworkManager.Instance;
-        lobbyTitle.text = manager != null && CODNetworkManager.ServerActive
-            ? manager.serverName.ToUpperInvariant()
-            : "LOBBY";
+        if (lobbyOverlay == null) return;
+        CloseOverlays();
+        lobbyOverlay.SetActive(true);
         RefreshLobby();
-    }
-
-    void HideLobby()
-    {
-        if (lobbyGroup != null) lobbyGroup.gameObject.SetActive(false);
+        StartCoroutine(AnimateOverlay(lobbyOverlay.transform as RectTransform));
     }
 
     void RefreshLobby()
     {
-        if (lobbyGroup == null || !lobbyGroup.gameObject.activeSelf) return;
-
-        foreach (Transform child in lobbyList) Destroy(child.gameObject);
-
-        float y = 0;
-        foreach (var player in CODLobbyPlayer.All)
+        if (lobbyOverlay == null || !lobbyOverlay.activeSelf) return;
+        int row = 0;
+        foreach (CODLobbyPlayer player in CODLobbyPlayer.All)
         {
-            if (player == null) continue;
-            bool mine = player.IsOwner;
-
-            var row = UITheme.Image("Player", lobbyList, mine ? new Color(1f, 0.54f, 0f, 0.14f) : UITheme.PanelSoft);
-            UITheme.TL(row.rectTransform, 0, y, 460, 44);
-
-            var name = UITheme.Text("Name", row.transform, player.playerName.Value, 17,
-                mine ? UITheme.Accent : UITheme.TextMain, FontStyles.Bold, TextAlignmentOptions.Left);
-            UITheme.Stretch(name.rectTransform);
-            name.margin = new Vector4(16, 0, 0, 0);
-            name.alignment = TextAlignmentOptions.Left;
-            name.verticalAlignment = VerticalAlignmentOptions.Middle;
-
-            y += 50;
+            if (player == null || row >= lobbyRows.Count) continue;
+            TextMeshProUGUI label = lobbyRows[row];
+            if (label != null)
+            {
+                label.transform.parent.gameObject.SetActive(true);
+                label.text = (player.IsOwner ? "[ YOU ]  " : "[ READY ]  ") + player.playerName.Value.ToUpperInvariant();
+                label.color = player.IsOwner ? Accent : Color.white;
+            }
+            row++;
+        }
+        for (; row < lobbyRows.Count; row++)
+        {
+            if (lobbyRows[row] != null) lobbyRows[row].transform.parent.gameObject.SetActive(false);
         }
 
-        lobbyStartButton.gameObject.SetActive(CODNetworkManager.ServerActive);
+        Button start = Find<Button>("Overlays/LobbyOverlay/Button_Start");
+        if (start != null) start.gameObject.SetActive(CODNetworkManager.ServerActive);
+    }
+
+    void BeginLobbyGame()
+    {
+        if (!CODNetworkManager.ServerActive)
+        {
+            ShowToast("ONLY THE HOST CAN DEPLOY");
+            return;
+        }
+        CODNetworkManager.Instance?.BeginGame();
+    }
+
+    void LeaveLobby()
+    {
+        if (lobbyOverlay != null) lobbyOverlay.SetActive(false);
+        CODNetworkManager.Instance?.Leave();
     }
 
     #endregion
 
-    #region OPERATORS tab
+    #region Profile, operator and loadout
 
-    void BuildOperatorsTab()
+    void RefreshProfile()
     {
-        var panel = CreateTabPanel("OPERATORS");
-        var library = CharacterSkinLibrary.Instance;
+        string player = CODNetworkManager.PlayerName;
+        if (profileNameInput != null) profileNameInput.SetTextWithoutNotify(player);
+        if (profileNameLabel != null) profileNameLabel.text = player.ToUpperInvariant();
+    }
 
-        var header = UITheme.Text("Header", panel, "SELECT OPERATOR", 30, UITheme.TextMain, FontStyles.Bold);
-        UITheme.TL(header.rectTransform, 48, 36, 600, 40);
-        header.characterSpacing = 3;
-
-        var sub = UITheme.Text("Sub", panel, "Your operator is visible to every player in the match.", 15, UITheme.TextDim);
-        UITheme.TL(sub.rectTransform, 48, 78, 700, 22);
-
-        if (library == null || library.Count == 0) return;
-
-        for (int i = 0; i < library.Count; i++)
+    void SaveProfile()
+    {
+        string requested = profileNameInput != null ? profileNameInput.text.Trim() : "";
+        if (string.IsNullOrWhiteSpace(requested))
         {
-            int index = i;
-            var skin = library.skins[i];
-
-            var card = UITheme.Image($"Operator_{skin.id}", panel, UITheme.Panel);
-            UITheme.TL(card.rectTransform, 48 + i * 300, 130, 280, 380);
-
-            var frame = UITheme.Image("Frame", card.transform, Color.clear);
-            UITheme.Stretch(frame.rectTransform);
-            frame.raycastTarget = false;
-            // hollow frame via 4 edges would be complex; use bottom bar highlight instead
-            var highlight = UITheme.Image("Highlight", card.transform, Color.clear);
-            UITheme.Place(highlight.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(280, 5));
-
-            var swatch = UITheme.Image("Swatch", card.transform, skin.tint);
-            UITheme.Place(swatch.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -26), new Vector2(210, 190));
-
-            var name = UITheme.Text("Name", card.transform, skin.displayName.ToUpperInvariant(), 24, UITheme.TextMain,
-                FontStyles.Bold, TextAlignmentOptions.Center);
-            UITheme.Place(name.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 120), new Vector2(260, 32));
-            name.characterSpacing = 3;
-
-            var desc = UITheme.Text("Desc", card.transform, skin.description, 13, UITheme.TextDim,
-                FontStyles.Normal, TextAlignmentOptions.Center);
-            UITheme.Place(desc.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 52), new Vector2(240, 60));
-            desc.textWrappingMode = TextWrappingModes.Normal;
-
-            var button = card.gameObject.AddComponent<Button>();
-            button.targetGraphic = card;
-            button.onClick.AddListener(() =>
-            {
-                PlayerAppearance.SavedSkinIndex = index;
-                stage.operatorDisplay?.RefreshSkin();
-                RefreshOperatorCards();
-            });
-
-            operatorCards.Add((index, highlight));
+            ShowToast("CALLSIGN CANNOT BE EMPTY");
+            return;
         }
+        CODNetworkManager.PlayerName = requested.Substring(0, Mathf.Min(18, requested.Length));
+        RefreshProfile();
+        ShowToast("CALLSIGN UPDATED");
+    }
 
+    void SetOperator(int index)
+    {
+        CharacterSkinLibrary library = CharacterSkinLibrary.Instance;
+        if (library == null || index < 0 || index >= library.Count)
+        {
+            ShowToast("OPERATOR DATA UNAVAILABLE");
+            return;
+        }
+        PlayerAppearance.SavedSkinIndex = index;
+        stage?.operatorDisplay?.RefreshSkin();
         RefreshOperatorCards();
+        ShowToast(library.skins[index].displayName.ToUpperInvariant() + " SELECTED");
     }
 
     void RefreshOperatorCards()
     {
         int selected = PlayerAppearance.SavedSkinIndex;
-        foreach (var (index, highlight) in operatorCards)
-            highlight.color = index == selected ? UITheme.Accent : Color.clear;
+        foreach (var card in new[] { ("Operator_Crimson", 0), ("Operator_Cobalt", 1) })
+        {
+            Image bar = Find<Image>("Screens/Screen_OPERATORS/OperatorCards/" + card.Item1 + "/SelectedBar");
+            if (bar != null) bar.enabled = card.Item2 == selected;
+        }
     }
+
+    void SetPrimary(string weaponId)
+    {
+        string[] saved = PlayerLoadout.SavedLoadout.Split(',');
+        string secondary = saved.Length > 1 && !string.IsNullOrWhiteSpace(saved[1]) ? saved[1].Trim() : "Glok_Pistol";
+        PlayerLoadout.SavedLoadout = weaponId + "," + secondary;
+        stage?.operatorDisplay?.RefreshWeapon();
+        RefreshLoadout();
+        ShowToast("PRIMARY EQUIPPED");
+    }
+
+    void SetSecondary(string weaponId)
+    {
+        string[] saved = PlayerLoadout.SavedLoadout.Split(',');
+        string primary = saved.Length > 0 && !string.IsNullOrWhiteSpace(saved[0]) ? saved[0].Trim() : "N4_Rifle";
+        PlayerLoadout.SavedLoadout = primary + "," + weaponId;
+        RefreshLoadout();
+        ShowToast("SECONDARY EQUIPPED");
+    }
+
+    void RefreshLoadout()
+    {
+        string[] saved = PlayerLoadout.SavedLoadout.Split(',');
+        string primary = saved.Length > 0 && !string.IsNullOrWhiteSpace(saved[0]) ? saved[0].Trim() : "N4_Rifle";
+        string secondary = saved.Length > 1 && !string.IsNullOrWhiteSpace(saved[1]) ? saved[1].Trim() : "Glok_Pistol";
+        foreach (string id in new[] { "N4_Rifle", "Saga_Rifle", "P6_SMG" })
+        {
+            Image bar = Find<Image>("Screens/Screen_LOADOUT/PrimaryWeapons/Weapon_" + id + "/SelectedBar");
+            if (bar != null) bar.enabled = id == primary;
+        }
+        Image secondaryBar = Find<Image>("Screens/Screen_LOADOUT/SecondaryWeapons/Weapon_Glok_Pistol/SelectedBar");
+        if (secondaryBar != null) secondaryBar.enabled = secondary == "Glok_Pistol";
+        TextMeshProUGUI active = Find<TextMeshProUGUI>("Screens/Screen_LOADOUT/ActiveLoadout/PrimaryValue");
+        if (active != null) active.text = WeaponName(primary).ToUpperInvariant();
+        active = Find<TextMeshProUGUI>("Screens/Screen_LOADOUT/ActiveLoadout/SecondaryValue");
+        if (active != null) active.text = WeaponName(secondary).ToUpperInvariant();
+    }
+
+    static string WeaponName(string id) => WeaponDatabase.Instance?.Get(id)?.displayName ?? id.Replace("_", " ");
 
     #endregion
 
-    #region LOADOUT tab
+    #region Settings and key rebinding
 
-    void BuildLoadoutTab()
+    void RefreshSettings()
     {
-        var panel = CreateTabPanel("LOADOUT");
+        SetText("Screens/Screen_SETTINGS/Audio/MasterRow/MasterValue", Mathf.RoundToInt(GameSettings.MasterVolume * 100f) + "%");
+        SetText("Screens/Screen_SETTINGS/Video/FovRow/FovValue", Mathf.RoundToInt(GameSettings.FieldOfView) + "°");
+        SetText("Screens/Screen_SETTINGS/Video/RenderRow/RenderValue", Mathf.RoundToInt(GameSettings.RenderScale * 100f) + "%");
+        SetText("Screens/Screen_SETTINGS/Video/ShadowRow/ShadowValue", Mathf.RoundToInt(GameSettings.ShadowDistance) + " M");
+        SetText("Screens/Screen_SETTINGS/Video/QualityRow/QualityValue", QualitySettings.names.Length == 0 ? "DEFAULT" : QualitySettings.names[GameSettings.QualityLevel].ToUpperInvariant());
+        SetText("Screens/Screen_SETTINGS/Video/MSAARow/MSAAValue", GameSettings.Antialiasing <= 1 ? "OFF" : GameSettings.Antialiasing + "X");
+        SetText("Screens/Screen_SETTINGS/Video/VSyncRow/VSyncValue", GameSettings.VSync ? "ON" : "OFF");
+        SetText("Screens/Screen_SETTINGS/Video/FullscreenRow/FullscreenValue", GameSettings.Fullscreen ? "ON" : "OFF");
+        SetText("Screens/Screen_SETTINGS/Controls/SensitivityRow/SensitivityValue", GameSettings.MouseSensitivity.ToString("F1"));
+        SetText("Screens/Screen_SETTINGS/Controls/CrouchRow/CrouchValue", InputBindings.CrouchIsToggle ? "TOGGLE" : "HOLD");
+        SetText("Screens/Screen_SETTINGS/Controls/TacSprintRow/TacSprintValue", InputBindings.TacSprintMode == 0 ? "DOUBLE TAP" : "AUTO HOLD");
+        SetText("Screens/Screen_SETTINGS/Controls/FireSprintRow/FireSprintValue", InputBindings.FireWhileSprinting ? "ON" : "OFF");
+    }
 
-        var header = UITheme.Text("Header", panel, "LOADOUT", 30, UITheme.TextMain, FontStyles.Bold);
-        UITheme.TL(header.rectTransform, 48, 36, 600, 40);
-        header.characterSpacing = 3;
+    void CycleQuality()
+    {
+        int count = Mathf.Max(1, QualitySettings.names.Length);
+        GameSettings.QualityLevel = (GameSettings.QualityLevel + 1) % count;
+        RefreshSettings();
+    }
 
-        var sub = UITheme.Text("Sub", panel, "Changes apply instantly to your operator and your next spawn.", 15, UITheme.TextDim);
-        UITheme.TL(sub.rectTransform, 48, 78, 700, 22);
+    void CycleMsaa()
+    {
+        int[] values = { 1, 2, 4, 8 };
+        int index = Array.IndexOf(values, GameSettings.Antialiasing);
+        GameSettings.Antialiasing = values[(Mathf.Max(0, index) + 1) % values.Length];
+        RefreshSettings();
+    }
 
-        var database = WeaponDatabase.Instance;
-        GameObject playerPrefab = CODNetworkManager.PlayerPrefabAsset;
-        WeaponController controller = playerPrefab != null
-            ? playerPrefab.GetComponentInChildren<WeaponController>(true)
-            : null;
-
-        if (database == null || controller == null || controller.slots == null) return;
-
-        // current selection from prefs
-        string[] savedIds = PlayerLoadout.SavedLoadout.Split(',');
-        loadoutOptions = new List<List<WeaponDatabase.Entry>>();
-        loadoutSelection = new List<int>();
-
-        float y = 130;
-        for (int slotIndex = 0; slotIndex < controller.slots.Length; slotIndex++)
+    void BeginRebind(string actionId)
+    {
+        awaitingBind = actionId;
+        if (keyLabels.TryGetValue(actionId, out TextMeshProUGUI label) && label != null)
         {
-            var slot = controller.slots[slotIndex];
-            Weapon defaultWeapon = slot != null ? slot.GetComponentInChildren<Weapon>(true) : null;
+            label.text = "PRESS KEY";
+            label.color = Accent;
+        }
+    }
 
-            var options = defaultWeapon != null
-                ? database.GetBySlotType(defaultWeapon.slotType)
-                : new List<WeaponDatabase.Entry>(database.weapons);
-            if (options.Count == 0) options = new List<WeaponDatabase.Entry>(database.weapons);
-            loadoutOptions.Add(options);
-
-            string savedId = slotIndex < savedIds.Length ? savedIds[slotIndex].Trim() : "";
-            int selected = options.FindIndex(o => o.id == savedId);
-            if (selected < 0 && defaultWeapon != null)
-                selected = options.FindIndex(o => defaultWeapon.name.StartsWith(o.id));
-            loadoutSelection.Add(Mathf.Max(0, selected));
-
-            // slot label
-            var label = UITheme.Text($"Slot{slotIndex}", panel, SlotLabel(slot, slotIndex), 17, UITheme.Accent, FontStyles.Bold);
-            UITheme.TL(label.rectTransform, 48, y, 400, 24);
-            label.characterSpacing = 3;
-            y += 32;
-
-            // weapon cards
-            var cards = new List<(string, Image)>();
-            float x = 48;
-            foreach (var option in options)
+    void Update()
+    {
+        if (string.IsNullOrEmpty(awaitingBind)) return;
+        if (!Input.anyKeyDown) return;
+        foreach (KeyCode key in Enum.GetValues(typeof(KeyCode)))
+        {
+            if (!Input.GetKeyDown(key)) continue;
+            if (key == KeyCode.Escape)
             {
-                int si = slotIndex;
-                string id = option.id;
-
-                var card = UITheme.Image($"W_{option.id}", panel, UITheme.Panel);
-                UITheme.TL(card.rectTransform, x, y, 235, 120);
-
-                var highlight = UITheme.Image("Highlight", card.transform, Color.clear);
-                UITheme.Place(highlight.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(235, 4));
-
-                Sprite icon = Resources.Load<Sprite>($"UI/{option.id}_UI");
-                if (icon != null)
-                {
-                    var img = UITheme.Image("Icon", card.transform, Color.white);
-                    img.sprite = icon;
-                    img.preserveAspect = true;
-                    UITheme.Place(img.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -8), new Vector2(190, 62));
-                    img.raycastTarget = false;
-                }
-
-                var name = UITheme.Text("Name", card.transform, option.displayName.ToUpperInvariant(), 15,
-                    UITheme.TextMain, FontStyles.Bold, TextAlignmentOptions.Center);
-                UITheme.Place(name.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 24), new Vector2(220, 20));
-
-                var button = card.gameObject.AddComponent<Button>();
-                button.targetGraphic = card;
-                button.onClick.AddListener(() =>
-                {
-                    loadoutSelection[si] = loadoutOptions[si].FindIndex(o => o.id == id);
-                    SaveLoadout();
-                    RefreshLoadoutCards();
-                    if (si == 0) stage.operatorDisplay?.RefreshWeapon();
-                });
-
-                cards.Add((option.id, highlight));
-                x += 247;
+                awaitingBind = null;
+                RefreshKeyLabels();
+                return;
             }
-            loadoutCards.Add(cards);
-            y += 138;
+            InputBindings.Set(awaitingBind, key);
+            ShowToast("BINDING UPDATED");
+            awaitingBind = null;
+            RefreshKeyLabels();
+            return;
         }
-
-        RefreshLoadoutCards();
     }
 
-    static string SlotLabel(WeaponSlotRig slot, int index)
+    void RefreshKeyLabels()
     {
-        if (slot == null) return $"SLOT {index + 1}";
-        return slot.name.Replace("SlotRig", "").Replace("Slot", " ").Replace("Rig", "").ToUpperInvariant().Trim()
-               + (index == 0 ? "  ·  PRIMARY" : "");
-    }
-
-    void SaveLoadout()
-    {
-        var ids = new string[loadoutSelection.Count];
-        for (int i = 0; i < loadoutSelection.Count; i++)
+        foreach (var pair in keyLabels)
         {
-            var options = loadoutOptions[i];
-            ids[i] = options.Count > 0 ? options[Mathf.Clamp(loadoutSelection[i], 0, options.Count - 1)].id : "-";
-        }
-        PlayerLoadout.SavedLoadout = string.Join(",", ids);
-    }
-
-    void RefreshLoadoutCards()
-    {
-        for (int slotIndex = 0; slotIndex < loadoutCards.Count; slotIndex++)
-        {
-            var options = loadoutOptions[slotIndex];
-            string selectedId = options.Count > 0
-                ? options[Mathf.Clamp(loadoutSelection[slotIndex], 0, options.Count - 1)].id
-                : "";
-            foreach (var (id, highlight) in loadoutCards[slotIndex])
-                highlight.color = id == selectedId ? UITheme.Accent : Color.clear;
+            if (pair.Value == null) continue;
+            pair.Value.text = InputBindings.Get(pair.Key).ToString().ToUpperInvariant();
+            pair.Value.color = Color.white;
         }
     }
 
     #endregion
 
-    #region Placeholder tabs
-
-    void BuildBarracksTab()
+    void SetText(string path, string value)
     {
-        var panel = CreateTabPanel("BARRACKS");
-
-        var header = UITheme.Text("Header", panel, "BARRACKS", 30, UITheme.TextMain, FontStyles.Bold);
-        UITheme.TL(header.rectTransform, 48, 36, 600, 40);
-        header.characterSpacing = 3;
-
-        var card = UITheme.Image("ProfileCard", panel, UITheme.Panel);
-        UITheme.TL(card.rectTransform, 48, 100, 430, 180);
-
-        var name = UITheme.Text("Name", card.transform, CODNetworkManager.PlayerName.ToUpperInvariant(), 26, UITheme.TextMain, FontStyles.Bold);
-        UITheme.TL(name.rectTransform, 24, 22, 380, 34);
-
-        var rank = UITheme.Text("Rank", card.transform, "RANK 1  ·  RECRUIT", 15, UITheme.Accent, FontStyles.Bold);
-        UITheme.TL(rank.rectTransform, 24, 60, 380, 22);
-
-        var stats = UITheme.Text("Stats", card.transform, "KILLS  --      DEATHS  --      K/D  --      MATCHES  --", 14, UITheme.TextDim);
-        UITheme.TL(stats.rectTransform, 24, 100, 380, 22);
-
-        var note = UITheme.Text("Note", card.transform, "Stat tracking arrives with the progression update.", 12, UITheme.TextDim, FontStyles.Italic);
-        UITheme.TL(note.rectTransform, 24, 136, 380, 20);
-
-        AddComingSoonModule(panel, 48, 320, "CHALLENGES");
-        AddComingSoonModule(panel, 268, 320, "CAMOS");
-        AddComingSoonModule(panel, 488, 320, "CALLING CARDS");
+        TextMeshProUGUI label = Find<TextMeshProUGUI>(path);
+        if (label != null) label.text = value;
     }
 
-    void BuildStoreTab()
+    void ShowToast(string message)
     {
-        var panel = CreateTabPanel("STORE");
-
-        var header = UITheme.Text("Header", panel, "STORE", 30, UITheme.TextMain, FontStyles.Bold);
-        UITheme.TL(header.rectTransform, 48, 36, 600, 40);
-        header.characterSpacing = 3;
-
-        AddComingSoonModule(panel, 48, 100, "OPERATOR BUNDLES");
-        AddComingSoonModule(panel, 268, 100, "WEAPON BLUEPRINTS");
-        AddComingSoonModule(panel, 488, 100, "BATTLE TOKENS");
+        if (notification == null) return;
+        notification.transform.parent.gameObject.SetActive(true);
+        notification.text = message;
+        StopCoroutine(nameof(HideToast));
+        StartCoroutine(nameof(HideToast));
     }
 
-    void AddComingSoonModule(RectTransform parent, float x, float y, string title)
+    IEnumerator HideToast()
     {
-        var card = UITheme.Image($"Soon_{title}", parent, new Color(0.06f, 0.07f, 0.09f, 0.85f));
-        UITheme.TL(card.rectTransform, x, y, 200, 150);
-
-        var name = UITheme.Text("Name", card.transform, title, 15, UITheme.Locked, FontStyles.Bold, TextAlignmentOptions.Center);
-        UITheme.Place(name.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 14), new Vector2(180, 40));
-        name.textWrappingMode = TextWrappingModes.Normal;
-
-        var soon = UITheme.Text("Soon", card.transform, "COMING SOON", 11, UITheme.Accent, FontStyles.Bold, TextAlignmentOptions.Center);
-        UITheme.Place(soon.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -26), new Vector2(180, 18));
-        soon.characterSpacing = 3;
+        yield return new WaitForSecondsRealtime(3.25f);
+        if (notification != null) notification.transform.parent.gameObject.SetActive(false);
     }
 
-    #endregion
+    void QuitGame()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
 }

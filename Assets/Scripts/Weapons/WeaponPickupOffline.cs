@@ -35,7 +35,10 @@ public class WeaponPickupOffline : WeaponPickup
 
             if (detectedGun == null) return;
 
-            if (weaponController.GETCurrentWeapon.slotType == detectedGun.slotType)
+            var heldGun = weaponController.GETCurrentWeapon;
+            if (heldGun == null) return;
+
+            if (heldGun.slotType == detectedGun.slotType)
             {
                 RaiseTheGun(hit.transform, weaponController.activeID - 1);
                 weaponController.animator.Play("GunPickUp", 1);
@@ -50,7 +53,11 @@ public class WeaponPickupOffline : WeaponPickup
 
     void RaiseTheGun(Transform gun, int slotID)
     {
-        var oldGun = weaponController.slots[slotID].GetComponentInChildren<Weapon>().transform;
+        if (slotID < 0 || slotID >= weaponController.slots.Length) return;
+
+        var existing = weaponController.slots[slotID].GetComponentInChildren<Weapon>(true);
+        if (existing == null) return;
+        var oldGun = existing.transform;
         gun.GetComponent<Rigidbody>().isKinematic = true;
         gun.GetComponent<BoxCollider>().enabled = false;
         gun.SetParent(weaponController.slots[slotID].transform);

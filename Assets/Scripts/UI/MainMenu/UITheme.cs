@@ -24,18 +24,54 @@ public static class UITheme
 
     #region Builders
 
+    // Every builder below is find-or-create.
+    //
+    // The frontend is saved scene content, and play mode re-runs these methods
+    // to re-attach button listeners — closures cannot be serialised, so that
+    // part genuinely has to happen every run. If the builders always made a new
+    // GameObject, a second TopBar would appear on top of the saved one every
+    // time you pressed Play, and the scene you were editing would not be the
+    // scene you were looking at.
+    //
+    // Reusing the existing object also keeps its fileID stable, so inspector
+    // references and prefab links into the menu survive.
+
+    /// <summary>
+    /// The child named <paramref name="name"/>, with a <typeparamref name="T"/>
+    /// on it, creating whichever part is missing.
+    /// </summary>
+    static T Adopt<T>(string name, Transform parent) where T : Component
+    {
+        Transform existing = parent != null ? parent.Find(name) : null;
+
+        if (existing == null)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            existing = go.transform;
+        }
+        else if (!(existing is RectTransform))
+        {
+            // A plain Transform where UI is expected cannot be converted in
+            // place, and silently returning it would produce a widget that
+            // never lays out.
+            Debug.LogError($"UITheme: '{name}' under '{(parent != null ? parent.name : "null")}' " +
+                           $"is not a RectTransform — UI cannot be built on it.");
+            return null;
+        }
+
+        return existing.GetComponent<T>() ?? existing.gameObject.AddComponent<T>();
+    }
+
     public static RectTransform Rect(string name, Transform parent)
     {
-        var go = new GameObject(name, typeof(RectTransform));
-        var rt = (RectTransform)go.transform;
-        rt.SetParent(parent, false);
-        return rt;
+        return Adopt<RectTransform>(name, parent);
     }
 
     public static Image Image(string name, Transform parent, Color color)
     {
-        var img = new GameObject(name, typeof(RectTransform), typeof(Image)).GetComponent<Image>();
-        img.transform.SetParent(parent, false);
+        var img = Adopt<Image>(name, parent);
+        if (img == null) return null;
         img.color = color;
         return img;
     }
@@ -43,8 +79,8 @@ public static class UITheme
     public static TextMeshProUGUI Text(string name, Transform parent, string content, float size,
         Color color, FontStyles style = FontStyles.Normal, TextAlignmentOptions align = TextAlignmentOptions.TopLeft)
     {
-        var text = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TextMeshProUGUI>();
-        text.transform.SetParent(parent, false);
+        var text = Adopt<TextMeshProUGUI>(name, parent);
+        if (text == null) return null;
         text.text = content;
         text.fontSize = size;
         text.color = color;
@@ -56,19 +92,61 @@ public static class UITheme
         return text;
     }
 
+    /// <summary>
+    /// Makes an image clickable and binds its runtime action.
+    ///
+    /// Buttons in the saved frontend are sometimes authored by an editor tool
+    /// while the object is inactive. A few Unity versions can deserialize those
+    /// components with a null <c>m_OnClick</c> event. The visual state still
+    /// changes when clicked, which makes this look like a broken gameplay
+    /// handler, but attaching the first listener throws and prevents the rest
+    /// of the menu from bootstrapping. Always restore the event object before
+    /// touching it, and replace the previous runtime action on adopted UI.
+    /// </summary>
+    public static Button BindClick(Image image, UnityEngine.Events.UnityAction onClick)
+    {
+        if (image == null)
+        {
+            Debug.LogError("UITheme: cannot bind a click handler to a missing Image.");
+            return null;
+        }
+
+        Button button = image.GetComponent<Button>() ?? image.gameObject.AddComponent<Button>();
+        if (button == null)
+        {
+            Debug.LogError($"UITheme: could not add Button to '{image.name}'.");
+            return null;
+        }
+
+        button.targetGraphic = image;
+
+        // Button.onClick is normally allocated by Unity's field initializer.
+        // Guard it anyway because a malformed/old scene must not stop every
+        // subsequent handler from being wired.
+        if (button.onClick == null)
+            button.onClick = new Button.ButtonClickedEvent();
+
+        // C# closures are not serialized. This runs on every startup for scene
+        // content, so old runtime callbacks must not accumulate.
+        button.onClick.RemoveAllListeners();
+        if (onClick != null) button.onClick.AddListener(onClick);
+        return button;
+    }
+
     public static Button Button(string name, Transform parent, string label, float fontSize,
         Color background, Color textColor, UnityEngine.Events.UnityAction onClick)
     {
         Image img = Image(name, parent, background);
-        Button button = img.gameObject.AddComponent<Button>();
-        button.targetGraphic = img;
+        if (img == null) return null;
+        Button button = BindClick(img, onClick);
+        if (button == null) return null;
+
         var colors = button.colors;
         colors.normalColor = Color.white;
         colors.highlightedColor = new Color(1.12f, 1.12f, 1.12f, 1f);
         colors.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
         colors.selectedColor = Color.white;
         button.colors = colors;
-        if (onClick != null) button.onClick.AddListener(onClick);
 
         var text = Text("Label", img.transform, label, fontSize, textColor, FontStyles.Bold, TextAlignmentOptions.Center);
         Stretch(text.rectTransform);
@@ -78,15 +156,16 @@ public static class UITheme
     public static TMP_InputField Input(string name, Transform parent, string placeholder, Vector2 size)
     {
         Image bg = Image(name, parent, PanelSoft);
+        if (bg == null) return null;
         bg.rectTransform.sizeDelta = size;
 
-        var input = bg.gameObject.AddComponent<TMP_InputField>();
+        var input = bg.GetComponent<TMP_InputField>() ?? bg.gameObject.AddComponent<TMP_InputField>();
 
         RectTransform area = Rect("TextArea", bg.transform);
         Stretch(area);
         area.offsetMin = new Vector2(10, 4);
         area.offsetMax = new Vector2(-10, -4);
-        area.gameObject.AddComponent<RectMask2D>();
+        if (area.GetComponent<RectMask2D>() == null) area.gameObject.AddComponent<RectMask2D>();
 
         var ph = Text("Placeholder", area, placeholder, size.y * 0.42f, TextDim, FontStyles.Italic, TextAlignmentOptions.Left);
         Stretch(ph.rectTransform);

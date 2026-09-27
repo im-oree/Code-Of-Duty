@@ -16,29 +16,55 @@ public class OperatorDisplay : MonoBehaviour
     Quaternion baseRotation = Quaternion.identity;
     float groundedLocalY;
 
-    public static OperatorDisplay Create(Transform parent, Vector3 position, Quaternion rotation)
+    /// <summary>
+    /// Resolves the authored preview already stored below <paramref name="parent"/>.
+    /// The menu intentionally does not spawn an operator at runtime: an absent
+    /// preview is a scene-authoring error and is reported instead of hidden by a
+    /// generated replacement.
+    /// </summary>
+    public static OperatorDisplay EnsureUnder(Transform parent, Vector3 position, Quaternion rotation)
     {
-        // never allow two operators under the same stage
-        if (parent != null)
+        var existing = parent != null ? parent.GetComponentInChildren<OperatorDisplay>(true) : null;
+        if (existing == null)
         {
-            for (int i = parent.childCount - 1; i >= 0; i--)
-            {
-                var child = parent.GetChild(i);
-                if (child.name == "OperatorDisplay" || child.name == "OperatorModel")
-                    DestroyImmediate(child.gameObject);
-            }
+            Debug.LogError("[OperatorDisplay] MenuStage has no authored OperatorDisplay.");
+            return null;
         }
 
-        var holder = new GameObject("OperatorDisplay");
-        holder.transform.SetParent(parent, false);
-        holder.transform.SetPositionAndRotation(position, rotation);
+        existing.Adopt();
+        return existing;
+    }
 
-        var display = holder.AddComponent<OperatorDisplay>();
-        display.idleSeed = Random.value * 10f;
-        display.BuildModel();
-        display.RefreshSkin();
-        display.RefreshWeapon();
-        return display;
+    /// <summary>
+    /// Wires up the model that is already in the scene.
+    ///
+    /// The menu operator is saved scene content — a real, editable GameObject
+    /// with a skeleton and a SkinnedMeshRenderer, not something instantiated on
+    /// play. What cannot be saved is the component references this class keeps
+    /// (animator, hand bone), so those are re-resolved, and the skin and weapon
+    /// are re-applied from current player data.
+    /// </summary>
+    public void Adopt()
+    {
+        if (model == null)
+        {
+            var found = transform.Find("OperatorModel");
+            if (found != null) model = found.gameObject;
+        }
+
+        if (model == null)
+        {
+            Debug.LogError("[OperatorDisplay] StartMenu is missing the authored OperatorModel child.");
+            return;
+        }
+
+        ConfigureAnimator();
+        if (rightHand == null) rightHand = FindBoneByName(model.transform, "hand_r", "righthand", "hand.r");
+        baseRotation = transform.localRotation;
+
+        if (idleSeed <= 0f) idleSeed = Random.value * 10f;
+        RefreshSkin();
+        RefreshWeapon();
     }
 
     #region Model
@@ -63,6 +89,26 @@ public class OperatorDisplay : MonoBehaviour
 
         StripToDisplayOnly(model);
         gameObject.SetActive(wasActive);
+
+        ConfigureAnimator();
+
+        if (rightHand == null) rightHand = FindBoneByName(model.transform, "hand_r", "righthand", "hand.r");
+
+        GroundModel();
+        baseRotation = transform.localRotation;
+    }
+
+    /// <summary>
+    /// Points the model's Animator at the menu idle controller.
+    ///
+    /// Shared by the adopt and the build paths: the controller reference is a
+    /// serialized field on the Animator and survives a scene save, but the
+    /// fallback checks below depend on runtime state, so they have to run
+    /// either way.
+    /// </summary>
+    void ConfigureAnimator()
+    {
+        if (model == null) return;
 
         animator = model.GetComponentInChildren<Animator>(true);
         if (animator != null)
@@ -99,11 +145,6 @@ public class OperatorDisplay : MonoBehaviour
             }
             animator.Update(0f);
         }
-
-        if (rightHand == null) rightHand = FindBoneByName(model.transform, "hand_r", "righthand", "hand.r");
-
-        GroundModel();
-        baseRotation = transform.localRotation;
     }
 
     /// <summary>Drops the model so the lowest visible point sits exactly on y = 0 (no floating).</summary>
@@ -233,9 +274,25 @@ public class OperatorDisplay : MonoBehaviour
         }
         if (prefab == null) return;
 
+        // The saved scene may already hold the weapon in the operator's hand.
+        // handWeapon is a plain field, not serialized, so after a scene load it
+        // is null even though the object is right there — instantiating on that
+        // basis gives the operator two rifles.
+        if (handWeapon == null && rightHand != null)
+        {
+            foreach (Transform child in rightHand)
+            {
+                if (child.name == prefab.name) { handWeapon = child.gameObject; break; }
+            }
+        }
+
         if (handWeapon != null)
         {
-            if (handWeapon.name == prefab.name) return; // already showing it
+            if (handWeapon.name == prefab.name)
+            {
+                AttachToHand(handWeapon); // re-seat the grip; cheap and idempotent
+                return;
+            }
             DestroyImmediate(handWeapon);
         }
 

@@ -84,6 +84,7 @@ public class PlayerLoadout : NetworkBehaviour
         if (database == null) return;
 
         string[] ids = csv.Split(',');
+        bool swapped = false;
 
         for (int slotIndex = 0; slotIndex < weaponController.slots.Length && slotIndex < ids.Length; slotIndex++)
         {
@@ -93,21 +94,28 @@ public class PlayerLoadout : NetworkBehaviour
             GameObject prefab = database.GetPrefab(id);
             if (prefab == null) continue;
 
-            ReplaceSlotWeapon(weaponController.slots[slotIndex], prefab, networkBulletPrefab);
+            if (ReplaceSlotWeapon(weaponController.slots[slotIndex], prefab, networkBulletPrefab))
+                swapped = true;
         }
+
+        // Anything holding a reference into a gun we just destroyed has to be re-pointed,
+        // otherwise the hand IK keeps aiming at a dead transform and the new gun is never
+        // placed in the hands.
+        if (swapped) weaponController.RebindAfterWeaponSwap();
 
         appliedCsv = csv;
     }
 
-    public static void ReplaceSlotWeapon(WeaponSlotRig slot, GameObject weaponPrefab, GameObject networkBullet = null)
+    /// <summary>Swaps the gun in a slot. Returns true when something was actually replaced.</summary>
+    public static bool ReplaceSlotWeapon(WeaponSlotRig slot, GameObject weaponPrefab, GameObject networkBullet = null)
     {
-        if (slot == null || weaponPrefab == null) return;
+        if (slot == null || weaponPrefab == null) return false;
 
         Weapon current = slot.GetComponentInChildren<Weapon>(true);
         if (current != null)
         {
             // already the right gun?
-            if (current.name.StartsWith(weaponPrefab.name)) return;
+            if (current.name.StartsWith(weaponPrefab.name)) return false;
 
             Transform old = current.transform;
             old.gameObject.SetActive(false);
@@ -125,5 +133,7 @@ public class PlayerLoadout : NetworkBehaviour
             foreach (var w in weapon.GetComponentsInChildren<Weapon>(true))
                 w.bulletPrefab = networkBullet;
         }
+
+        return true;
     }
 }

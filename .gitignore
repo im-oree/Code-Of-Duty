@@ -112,3 +112,20 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# ---------------------------------------------------------------------------
+# Code Of Duty additions
+# ---------------------------------------------------------------------------
+# Reference material: the Three-FPS reference clone + UI research imagery.
+# Lives OUTSIDE Assets/ so Unity never imports or compiles it, and is never
+# committed (third-party code / imagery stays local).
+/Reference/
+
+# Unity Web Clone (TS/three.js Unity runtime replica) build + deps
+/UnityWeb/node_modules/
+/UnityWeb/dist/
+/UnityWeb/.vite/
+/UnityWeb/captures/
+
+# Headless verification output
+/Artifacts/

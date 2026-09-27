@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unity Web Clone — Code Of Duty</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Unity's dark editor skin, matched closely enough that a screenshot from here
+   reads the same as one from the Editor. Values sampled from Unity 6's theme.
+   --------------------------------------------------------------------------- */
+:root {
+  --bg:            #383838;
+  --bg-dark:       #2b2b2b;
+  --bg-darker:     #212121;
+  --toolbar:       #3c3c3c;
+  --panel:         #383838;
+  --panel-header:  #3c3c3c;
+  --border:        #232323;
+  --border-light:  #4a4a4a;
+  --text:          #d2d2d2;
+  --text-dim:      #9a9a9a;
+  --text-bright:   #ffffff;
+  --select:        #2c5d87;
+  --select-in:     #4a76a8;
+  --hover:         #424242;
+  --accent:        #ff7a1a;
+  --warn:          #f0c040;
+  --error:         #e05a4f;
+  --ok:            #7ac06a;
+  --row-h:         17px;
+  --font:          -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono:          ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg-darker);
+  color: var(--text);
+  font: 11px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+button, input, select { font: inherit; color: inherit; }
+
+/* ------------------------------------------------------------------ layout */
+#app { display: grid; grid-template-rows: 21px 24px 1fr; height: 100%; }
+
+/* Menu bar */
+#menubar {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--toolbar); border-bottom: 1px solid var(--border);
+  padding: 0 6px;
+}
+#menubar .m { padding: 2px 8px; border-radius: 2px; cursor: default; color: var(--text); }
+#menubar .m:hover { background: var(--hover); }
+#menubar .spacer { flex: 1; }
+#menubar .ver { color: var(--text-dim); font-size: 10px; padding-right: 4px; }
+
+/* Toolbar */
+#toolbar {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--toolbar); border-bottom: 1px solid var(--border);
+  padding: 0 6px;
+}
+.tgroup { display: flex; align-items: center; gap: 1px; }
+.tbtn {
+  height: 18px; min-width: 24px; padding: 0 7px;
+  background: #4c4c4c; border: 1px solid var(--border);
+  border-radius: 2px; cursor: pointer; color: var(--text);
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+}
+.tbtn:hover { background: #5a5a5a; }
+.tbtn.on { background: var(--select-in); border-color: #2a4d6e; color: #fff; }
+.tbtn.play.on { background: #4a76a8; }
+.tsep { width: 1px; height: 14px; background: var(--border); margin: 0 3px; }
+select.tsel, input.tinput {
+  height: 18px; background: #333; border: 1px solid var(--border);
+  border-radius: 2px; padding: 0 4px; max-width: 240px;
+}
+input.tinput { width: 70px; }
+#toolbar .spacer { flex: 1; }
+#stats { color: var(--text-dim); font-family: var(--mono); font-size: 10px; white-space: nowrap; }
+
+/* Docked panes */
+#docks { display: grid; grid-template-columns: 260px 1fr 320px; min-height: 0; }
+#leftcol  { display: grid; grid-template-rows: 1fr; min-height: 0; border-right: 1px solid var(--border); }
+#midcol   { display: grid; grid-template-rows: 1fr 240px; min-height: 0; min-width: 0; }
+#rightcol { display: grid; grid-template-rows: 1fr; min-height: 0; border-left: 1px solid var(--border); }
+
+.pane { display: grid; grid-template-rows: 20px 1fr; min-height: 0; background: var(--panel); }
+.pane + .pane { border-top: 1px solid var(--border); }
+.pane-tabs {
+  display: flex; align-items: stretch; background: var(--bg-dark);
+  border-bottom: 1px solid var(--border);
+}
+.pane-tab {
+  display: flex; align-items: center; gap: 5px; padding: 0 10px;
+  background: var(--bg-dark); color: var(--text-dim);
+  border-right: 1px solid var(--border); cursor: pointer; font-size: 10px;
+}
+.pane-tab.on { background: var(--panel); color: var(--text); }
+.pane-tools { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 0 6px; }
+.pane-body { overflow: auto; min-height: 0; }
+.pane-body::-webkit-scrollbar { width: 11px; height: 11px; }
+.pane-body::-webkit-scrollbar-track { background: var(--bg-dark); }
+.pane-body::-webkit-scrollbar-thumb { background: #5a5a5a; border: 2px solid var(--bg-dark); border-radius: 6px; }
+
+.searchbar { padding: 3px 4px; background: var(--panel-header); border-bottom: 1px solid var(--border); }
+.searchbar input {
+  width: 100%; height: 17px; background: #303030; color: var(--text);
+  border: 1px solid var(--border); border-radius: 9px; padding: 0 8px;
+}
+
+/* --------------------------------------------------------------- hierarchy */
+#hierarchy-body { font-size: 11px; }
+.hrow {
+  display: flex; align-items: center; height: var(--row-h);
+  padding-right: 6px; cursor: pointer; white-space: nowrap;
+}
+.hrow:hover { background: var(--hover); }
+.hrow.sel { background: var(--select); color: #fff; }
+.hrow.inactive .hname { color: #7b7b7b; font-style: italic; }
+.htwist {
+  width: 13px; text-align: center; color: var(--text-dim);
+  font-size: 9px; flex: 0 0 13px;
+}
+.htwist.leaf { visibility: hidden; }
+.hicon { width: 13px; flex: 0 0 13px; text-align: center; opacity: .85; font-size: 10px; display:inline-flex;align-items:center;justify-content:center}
+.hname { overflow: hidden; text-overflow: ellipsis; }
+.hbadge { margin-left: auto; color: var(--text-dim); font-size: 9px; padding-left: 8px; }
+
+/* --------------------------------------------------------------- inspector */
+#inspector-body { padding-bottom: 20px; }
+.insp-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px; background: var(--panel-header); border-bottom: 1px solid var(--border);
+}
+.insp-head input[type=checkbox] { accent-color: var(--select-in); }
+.insp-head .nm {
+  flex: 1; height: 18px; background: #303030; border: 1px solid var(--border);
+  border-radius: 2px; padding: 0 5px; color: var(--text-bright);
+}
+.insp-sub {
+  display: flex; gap: 10px; padding: 4px 8px; color: var(--text-dim);
+  font-size: 10px; border-bottom: 1px solid var(--border); background: var(--panel-header);
+}
+.comp { border-bottom: 1px solid var(--border); }
+.comp-head {
+  display: flex; align-items: center; gap: 5px; padding: 4px 6px;
+  background: #414141; cursor: pointer;
+}
+.comp-head:hover { background: #484848; }
+.comp-head .tw { width: 10px; color: var(--text-dim); font-size: 9px; }
+.comp-head .ic { width: 14px; text-align: center; display:inline-flex;align-items:center;justify-content:center}
+.comp-head .ti { font-weight: 600; color: var(--text); }
+.comp-head .cid { margin-left: auto; color: #6f6f6f; font-family: var(--mono); font-size: 9px; }
+.comp-body { padding: 3px 6px 6px 6px; background: var(--panel); }
+.prow {
+  display: grid; grid-template-columns: 46% 1fr; gap: 6px;
+  align-items: center; min-height: 16px; padding: 1px 0;
+}
+.prow > .k { color: var(--text); overflow: hidden; text-overflow: ellipsis; padding-left: 8px; }
+.prow > .v { color: #c8c8c8; font-family: var(--mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+.prow.nested > .k { padding-left: 20px; color: var(--text-dim); }
+.vec { display: flex; gap: 4px; }
+.vec span { display: inline-flex; gap: 3px; align-items: baseline; }
+.vec b { color: var(--text-dim); font-weight: 400; }
+.swatch { display: inline-block; width: 26px; height: 11px; border: 1px solid #111; vertical-align: -1px; margin-right: 5px; }
+.ref { color: #6fa8dc; }
+.ref.null { color: #6f6f6f; }
+.empty { padding: 14px; color: var(--text-dim); text-align: center; }
+
+/* ------------------------------------------------------------------- scene */
+#scene-pane { position: relative; min-width: 0; }
+#viewport { position: relative; width: 100%; height: 100%; overflow: hidden; background: #1d1d1d; }
+#viewport canvas { display: block; width: 100%; height: 100%; }
+#viewport.clean { }
+.overlay {
+  position: absolute; left: 8px; top: 8px; z-index: 5;
+  background: rgba(20,20,20,.82); border: 1px solid #000; border-radius: 3px;
+  padding: 5px 8px; font-family: var(--mono); font-size: 10px; line-height: 1.6;
+  pointer-events: none; max-width: 60%;
+}
+.overlay .w { color: var(--warn); }
+.gizmo {
+  position: absolute; right: 10px; top: 10px; z-index: 5;
+  background: rgba(20,20,20,.8); border: 1px solid #000; border-radius: 3px;
+  padding: 4px 7px; font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+}
+#status {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 6;
+  background: rgba(20,20,20,.94); border: 1px solid #000; border-radius: 4px;
+  padding: 10px 16px; display: flex; align-items: center; gap: 9px;
+}
+#status.hidden { display: none; }
+.spin {
+  width: 11px; height: 11px; border: 2px solid #555; border-top-color: var(--accent);
+  border-radius: 50%; animation: sp .8s linear infinite;
+}
+.spin.hidden { display: none; }
+@keyframes sp { to { transform: rotate(360deg); } }
+.bad { color: var(--error); }
+
+/* ---------------------------------------------------------------- project */
+#project-pane { min-height: 0; }
+#project-body { display: grid; grid-template-columns: 200px 1fr; min-height: 0; height: 100%; }
+#proj-tree { overflow: auto; border-right: 1px solid var(--border); background: var(--bg-dark); }
+#proj-list { overflow: auto; padding: 4px; align-content: start;
+             display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 2px; }
+.pitem {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 6px 3px; border-radius: 3px; cursor: pointer; text-align: center;
+}
+.pitem:hover { background: var(--hover); }
+.pitem.sel { background: var(--select); }
+.pitem .ico { font-size: 20px; line-height: 1; display:inline-flex;align-items:center;justify-content:center}
+.pitem .nm { font-size: 10px; word-break: break-word; line-height: 1.25; max-width: 100%; }
+.pitem .sz { font-size: 9px; color: var(--text-dim); }
+#proj-path {
+  grid-column: 1 / -1; padding: 2px 6px; background: var(--panel-header);
+  border-bottom: 1px solid var(--border); color: var(--text-dim); font-size: 10px;
+}
+
+/* ---------------------------------------------------------------- console */
+#console-body { font-family: var(--mono); font-size: 10px; }
+.crow { display: flex; gap: 7px; padding: 3px 8px; border-bottom: 1px solid #2e2e2e; align-items: flex-start; }
+.crow:nth-child(even) { background: #3d3d3d; }
+.crow .t { flex: 0 0 auto; }
+.crow.warn .t { color: var(--warn); }
+.crow.err  .t { color: var(--error); }
+.crow.info .t { color: var(--text-dim); }
+.crow .msg { white-space: pre-wrap; word-break: break-word; }
+.crow .n { margin-left: auto; color: var(--text-dim); flex: 0 0 auto; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="menubar">
+    <span class="m">File</span><span class="m">Edit</span><span class="m">Assets</span>
+    <span class="m">GameObject</span><span class="m">Component</span><span class="m">Window</span>
+    <span class="spacer"></span>
+    <span class="ver" id="unity-version">Unity —</span>
+  </div>
+
+  <div id="toolbar">
+    <div class="tgroup">
+      <button class="tbtn play" id="btn-play"  title="Play (rebuild scene)">▶</button>
+      <button class="tbtn"      id="btn-pause" title="Pause render loop">❚❚</button>
+      <button class="tbtn"      id="btn-step"  title="Render a single frame">▶❙</button>
+    </div>
+    <div class="tsep"></div>
+    <select class="tsel" id="scene-picker" title="Scene"></select>
+    <select class="tsel" id="camera-picker" title="Camera"></select>
+    <div class="tsep"></div>
+    <div class="tgroup">
+      <button class="tbtn on" id="btn-ui"     title="Toggle all uGUI rendering">UI</button>
+      <button class="tbtn on" id="btn-orphan" title="Preview UI subtrees that have no Canvas parent">Orphan UI</button>
+      <button class="tbtn on" id="btn-gizmos" title="Toggle grid and light gizmos">Gizmos</button>
+      <button class="tbtn"    id="btn-wire"   title="Wireframe">Wire</button>
+    </div>
+    <div class="tsep"></div>
+    <label style="color:var(--text-dim)">FOV</label>
+    <input class="tinput" id="fov-input" type="number" min="1" max="179" step="1" value="60" />
+    <button class="tbtn" id="btn-frame" title="Frame selection (F)">Frame</button>
+    <div class="spacer"></div>
+    <span id="stats"></span>
+  </div>
+
+  <div id="docks">
+    <div id="leftcol">
+      <section class="pane">
+        <div class="pane-tabs"><div class="pane-tab on">⊞ Hierarchy</div>
+          <div class="pane-tools"><span id="hier-count" style="color:var(--text-dim)"></span></div>
+        </div>
+        <div class="pane-body">
+          <div class="searchbar"><input id="hier-search" type="search" placeholder="Search…" /></div>
+          <div id="hierarchy-body"></div>
+        </div>
+      </section>
+    </div>
+
+    <div id="midcol">
+      <section class="pane" id="scene-pane">
+        <div class="pane-tabs">
+          <div class="pane-tab on" id="tab-scene">◈ Scene</div>
+          <div class="pane-tab" id="tab-game">▶ Game</div>
+          <div class="pane-tools"><span id="view-mode" style="color:var(--text-dim)"></span></div>
+        </div>
+        <div class="pane-body" style="overflow:hidden">
+          <div id="viewport">
+            <div class="overlay" id="overlay"></div>
+            <div class="gizmo" id="gizmo"></div>
+            <div id="status"><span class="spin"></span><span id="status-text">Starting…</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" id="project-pane">
+        <div class="pane-tabs">
+          <div class="pane-tab on" id="tab-project">▤ Project</div>
+          <div class="pane-tab" id="tab-console">▣ Console</div>
+          <div class="pane-tools"><span id="proj-count" style="color:var(--text-dim)"></span></div>
+        </div>
+        <div class="pane-body" style="overflow:hidden">
+          <div id="project-body">
+            <div id="proj-tree"></div>
+            <div style="display:grid;grid-template-rows:auto 1fr;min-height:0">
+              <div id="proj-path">Assets</div>
+              <div id="proj-list"></div>
+            </div>
+          </div>
+          <div id="console-body" style="display:none;overflow:auto;height:100%"></div>
+        </div>
+      </section>
+    </div>
+
+    <div id="rightcol">
+      <section class="pane">
+        <div class="pane-tabs"><div class="pane-tab on">☰ Inspector</div></div>
+        <div class="pane-body"><div id="inspector-body"><div class="empty">Nothing selected</div></div></div>
+      </section>
+    </div>
+  </div>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

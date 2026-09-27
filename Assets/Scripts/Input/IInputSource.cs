@@ -19,6 +19,7 @@ namespace CodeOfDuty.Input
         Reload,
         Melee,
         Inspect,
+        SwitchSight,
 
         // equipment
         Interact,
@@ -55,6 +56,12 @@ namespace CodeOfDuty.Input
 
         /// <summary>Look delta for this frame, in device-independent units.</summary>
         Vector2 Look { get; }
+
+        /// <summary>
+        /// Lean intent, -1 left to +1 right. An axis rather than two buttons so a
+        /// gamepad or a future analogue binding can lean partially.
+        /// </summary>
+        float Lean { get; }
 
         bool Held(InputActionId action);
         bool Pressed(InputActionId action);

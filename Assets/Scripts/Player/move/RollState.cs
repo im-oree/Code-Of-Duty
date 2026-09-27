@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using CodeOfDuty.Input;
 
 public class RollState : MoveStateBase
 {
@@ -18,7 +19,7 @@ public class RollState : MoveStateBase
         characterController.Move(characterMove.rollVelocity * Time.deltaTime);
 
         // COD slide-cancel: jump out of the slide at any point, KEEPING momentum
-        if (InputBindings.Down("jump") && characterMove.CanStandUp())
+        if (characterMove.InputSource.Pressed(InputActionId.Jump) && characterMove.CanStandUp())
         {
             characterMove.moveVelocity = characterMove.rollVelocity;
             characterMove.SetState(characterMove.jumpState);

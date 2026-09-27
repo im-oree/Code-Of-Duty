@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using CodeOfDuty.Input;
 
 public class StandState : MoveStateBase
 {
@@ -52,9 +53,10 @@ public class StandState : MoveStateBase
 
     public override void Tick()
     {
-        var inputVector = new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
+        var input = characterMove.InputSource;
+        var inputVector = input.Move;
 
-        isSprint = (InputBindings.Held("sprint") && inputVector.y > 0 && !walk);
+        isSprint = (input.Held(InputActionId.Sprint) && inputVector.y > 0 && !walk);
 
         Quaternion moveForward = Quaternion.Euler(0, characterMove.directionOrienter.rotation.eulerAngles.y, 0);
 
@@ -71,12 +73,12 @@ public class StandState : MoveStateBase
         characterMove.moveVelocity = Vector3.ClampMagnitude(moveForward * Vector3.forward * forwardMoveSpeed + moveForward * Vector3.right * rightMoveSpeed, currentSpeed) + characterMove.velocity + characterMove.edgeSlipVelocity;
 
 
-        if (InputBindings.Down("crouch"))
+        if (input.Pressed(InputActionId.Crouch))
         {
             characterMove.SetState(isSprint ? characterMove.rollState : characterMove.crouchState);
         }
 
-        if (InputBindings.Down("jump"))
+        if (input.Pressed(InputActionId.Jump))
         {
             characterMove.SetState(characterMove.jumpState);
         }

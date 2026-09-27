@@ -47,11 +47,23 @@ public static class InputBindings
         Register("melee", "Melee Stance", "Combat", KeyCode.Alpha3);
         Register("reload", "Reload", "Combat", KeyCode.R);
         Register("grenade", "Throw Grenade", "Combat", KeyCode.G);
+        Register("tactical", "Tactical Equipment", "Combat", KeyCode.Q);
+        // Unbound by default: the knife is swung with Fire while in melee stance, so a
+        // dedicated key would be a second way to do the same thing. It exists because the
+        // gamepad binds it to right-stick click, and because players ask for it.
+        Register("meleeAttack", "Quick Melee", "Combat", KeyCode.None);
+        Register("inspect", "Inspect Weapon", "Combat", KeyCode.I);
+
+        // KILLSTREAKS
+        Register("streak1", "Killstreak 1", "Killstreaks", KeyCode.Z);
+        Register("streak2", "Killstreak 2", "Killstreaks", KeyCode.X);
+        Register("streak3", "Killstreak 3", "Killstreaks", KeyCode.B);
 
         // GENERAL
         Register("interact", "Interact / Pickup", "General", KeyCode.F);
         Register("viewToggle", "FPS / TPS Camera", "General", KeyCode.V);
         Register("lean", "Lean (axis)", "General", KeyCode.None);
+        Register("scoreboard", "Scoreboard", "General", KeyCode.Tab);
         Register("pause", "Pause Menu", "General", KeyCode.Escape);
     }
 
